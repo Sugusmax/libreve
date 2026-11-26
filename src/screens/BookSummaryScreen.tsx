@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import {
   Animated,
+  BackHandler,
   findNodeHandle,
   Image,
   Modal,
@@ -133,6 +134,39 @@ export default function BookSummaryScreen({
   const userScrolledRef = useRef(false);
   const similarRequestedRef = useRef(false);
   const lastOffsetRef = useRef(0);
+
+  // El botón/gesto «atrás» cierra primero el diálogo abierto; si no hay
+  // ninguno, el evento llega a App.tsx y vuelve a la pantalla anterior.
+  useEffect(() => {
+    const subscription = BackHandler.addEventListener(
+      'hardwareBackPress',
+      () => {
+        if (modelPicker) {
+          if (addingKey) {
+            setAddingKey(false);
+            setKeyStatus('');
+          } else {
+            setModelPicker(null);
+          }
+          return true;
+        }
+
+        if (menuChapter) {
+          setMenuChapter(null);
+          return true;
+        }
+
+        if (coverVisible) {
+          setCoverVisible(false);
+          return true;
+        }
+
+        return false;
+      },
+    );
+
+    return () => subscription.remove();
+  }, [modelPicker, addingKey, menuChapter, coverVisible]);
 
   const handleScroll = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
     const offset = event.nativeEvent.contentOffset.y;
@@ -804,7 +838,14 @@ export default function BookSummaryScreen({
         visible={modelPicker !== null}
         transparent
         animationType="fade"
-        onRequestClose={() => setModelPicker(null)}
+        onRequestClose={() => {
+          if (addingKey) {
+            setAddingKey(false);
+            setKeyStatus('');
+          } else {
+            setModelPicker(null);
+          }
+        }}
       >
         <TouchableOpacity
           style={styles.modalBackdrop}

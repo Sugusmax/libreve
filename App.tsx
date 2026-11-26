@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import { ActivityIndicator, StyleSheet, View } from 'react-native';
+import { useEffect, useRef, useState } from 'react';
+import { ActivityIndicator, BackHandler, StyleSheet, View } from 'react-native';
 import BookSummaryScreen from './src/screens/BookSummaryScreen';
 import HomeScreen from './src/screens/HomeScreen';
 import InterestsScreen from './src/screens/InterestsScreen';
@@ -30,6 +30,7 @@ type Screen =
 
 type LibraryOrigin = 'suggestions' | 'recommendations';
 type SummaryOrigin = 'suggestions' | 'library';
+type InterestsOrigin = 'home' | 'recommendations';
 
 function sameInterests(a: string[], b: string[]): boolean {
   if (a.length !== b.length) {
@@ -72,6 +73,8 @@ export default function App() {
     useState<LibraryOrigin>('recommendations');
   const [summaryOrigin, setSummaryOrigin] =
     useState<SummaryOrigin>('suggestions');
+  const [interestsOrigin, setInterestsOrigin] =
+    useState<InterestsOrigin>('home');
   const [isReady, setIsReady] = useState(false);
   const [interestsCompleted, setInterestsCompleted] = useState(false);
 
@@ -143,6 +146,7 @@ export default function App() {
   const handleResetInterests = () => {
     // Conservamos los intereses guardados para que aparezcan seleccionados.
     // Las sugerencias solo se descartan si al guardar han cambiado los temas.
+    setInterestsOrigin('recommendations');
     setScreen('interests');
   };
 
@@ -164,6 +168,53 @@ export default function App() {
     setScreen(summaryOrigin === 'library' ? 'library' : 'suggestions');
   };
 
+  const goBack = (): boolean => {
+    if (!isReady) {
+      return true;
+    }
+
+    switch (screen) {
+      case 'bookSummary':
+        if (selectedBook) {
+          closeBook();
+        } else {
+          setScreen('suggestions');
+        }
+        return true;
+      case 'library':
+        setScreen(libraryOrigin);
+        return true;
+      case 'suggestions':
+        setScreen('recommendations');
+        return true;
+      case 'interests':
+        setScreen(interestsOrigin);
+        return true;
+      case 'recommendations':
+        // La pantalla de clave es la anterior en el flujo.
+        setScreen('home');
+        return true;
+      case 'home':
+        // En la pantalla inicial dejamos que Android cierre la app.
+        return false;
+    }
+  };
+
+  // Se registra una sola vez al montar App. Así, los listeners que registren
+  // las pantallas para cerrar sus modales se ejecutan primero (RN los llama en
+  // orden inverso de registro) y pueden consumir el evento.
+  const goBackRef = useRef(goBack);
+  goBackRef.current = goBack;
+
+  useEffect(() => {
+    const subscription = BackHandler.addEventListener(
+      'hardwareBackPress',
+      () => goBackRef.current(),
+    );
+
+    return () => subscription.remove();
+  }, []);
+
   if (!isReady) {
     return (
       <View style={styles.loading}>
@@ -180,6 +231,7 @@ export default function App() {
           setApiKey(key);
           setLibraryOrigin('recommendations');
           setSummaryOrigin('suggestions');
+          setInterestsOrigin('home');
 
           if (!interestsCompleted) {
             setScreen('interests');

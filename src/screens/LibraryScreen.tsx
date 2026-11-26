@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
+  BackHandler,
   Image,
   Modal,
   ScrollView,
@@ -82,6 +83,29 @@ export default function LibraryScreen({
       active = false;
     };
   }, []);
+
+  // «Atrás» cierra primero la confirmación o la hoja de orden; si no hay
+  // ninguna abierta, App.tsx se encarga de volver a la pantalla anterior.
+  useEffect(() => {
+    const subscription = BackHandler.addEventListener(
+      'hardwareBackPress',
+      () => {
+        if (pendingDelete) {
+          setPendingDelete(null);
+          return true;
+        }
+
+        if (sortSheetVisible) {
+          setSortSheetVisible(false);
+          return true;
+        }
+
+        return false;
+      },
+    );
+
+    return () => subscription.remove();
+  }, [pendingDelete, sortSheetVisible]);
 
   const sortedEntries = useMemo(() => {
     const items = [...entries];
