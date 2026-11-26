@@ -1,0 +1,36 @@
+{
+  "name": "libreve",
+  "version": "0.1.0",
+  "main": "expo/AppEntry",
+  "scripts": {
+    "start": "expo start",
+    "android": "expo run:android --port 8084",
+    "android:build": "cd android && ANDROID_HOME=$HOME/Android/Sdk ANDROID_SDK_ROOT=$HOME/Android/Sdk ./gradlew :app:assembleDebug -PreactNativeDevServerPort=8084 -PreactNativeArchitectures=arm64-v8a && adb install -r app/build/outputs/apk/debug/app-debug.apk",
+    "android:connect": "adb reverse tcp:8084 tcp:8084 && adb shell am start -a android.intent.action.VIEW -d 'expo-dev-launcher://expo-development-client?url=http%3A%2F%2Flocalhost%3A8084' -p com.libreve.app",
+    "ios": "expo run:ios",
+    "web": "expo start --web",
+    "lint": "expo lint"
+  },
+  "dependencies": {
+    "@expo/metro-runtime": "~3.2.3",
+    "expo": "~51.0.39",
+    "expo-clipboard": "~6.0.3",
+    "expo-crypto": "~13.0.2",
+    "expo-dev-client": "~4.0.29",
+    "expo-file-system": "~17.0.1",
+    "expo-secure-store": "~13.0.2",
+    "expo-status-bar": "~1.12.1",
+    "expo-web-browser": "~13.0.3",
+    "react": "18.2.0",
+    "react-dom": "18.2.0",
+    "react-native": "0.74.5",
+    "react-native-web": "~0.19.10"
+  },
+  "devDependencies": {
+    "@babel/core": "^7.20.0",
+    "@types/react": "~18.2.45",
+    "babel-preset-expo": "~11.0.0",
+    "typescript": "~5.3.3"
+  },
+  "private": true
+}

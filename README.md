@@ -1,0 +1,41 @@
+# Libreve
+
+Frontend de ejemplo para una app de resúmenes de libros y recomendaciones basadas en los intereses del usuario.
+
+## Flujo actual
+
+1. **Clave de IA**: primera pantalla, sin login previo. Elige proveedor entre Gemini, OpenAI (ChatGPT), Anthropic Claude, Groq, Mistral AI, DeepSeek y OpenRouter. Cada uno muestra un tutorial de 3 pasos y abre su página para crear la clave; pégala con un toque o escríbela y pulsa **Usar clave**. Puedes cambiar de proveedor y de clave cuando quieras desde «Cambiar clave».
+2. **Intereses**: al guardar la clave se abre una pantalla con 24 temas. El usuario elige entre 3 y 10 y pulsa **Guardar intereses**. Solo se pregunta una vez.
+3. **Recomendaciones**: pantalla con los temas elegidos. El botón **Continuar** llama al proveedor elegido con su clave guardada y pide exactamente 6 sugerencias de libros en JSON, con motivos de hasta 12 palabras y el número total de capítulos o partes de cada obra. Cada proveedor tiene un modelo principal y modelos de reserva: si uno devuelve alta demanda o saturación, la app prueba el siguiente con una pausa breve. Los errores de clave inválida o cuota agotada no se reintentan. Gemini mantiene la key en la URL y el cuerpo como `text/plain` para evitar preflight CORS en navegador; los demás usan `Authorization: Bearer` (o `x-api-key` en Claude) y pueden estar limitados en web por CORS. Mientras se prueban modelos, la pantalla muestra el estado. Las sugerencias se buscan una sola vez: si ya hay guardadas, el botón «Ver mis sugerencias» las reutiliza sin gastar tokens.
+4. **Sugerencias**: lista de libros con carátulas reales buscadas en **Open Library** y servidas desde `covers.openlibrary.org` (se muestran enlazando a su servidor, sin descargarlas ni redistribuirlas). Si no hay portada, se usa una imagen **CC0 / dominio público** de Openverse. Las listas usan miniaturas y el visor a pantalla completa pide la versión grande (`-L.jpg` en Open Library o la imagen original de Openverse); si no existe, vuelve a la miniatura. Se incluye un enlace de cortesía a Open Library.
+5. **Resumen por capítulos**: al tocar una carátula se abre la pantalla del libro. El proveedor elegido genera automáticamente el resumen del primer capítulo o parte; el botón **Continuar** pide el siguiente, enviando como contexto solo los títulos de lo ya resumido y una pista de máximo 12 palabras sobre qué viene después (no los resúmenes completos). Cada resumen es extenso: 6–8 párrafos y unas 600–900 palabras, con un límite de salida de 3000 tokens por capítulo. Con todos los proveedores el texto aparece mientras se genera (streaming), en vez de esperar a la respuesta completa. Las sugerencias y los capítulos ya generados se guardan en el dispositivo: al recargar se restaura el último libro abierto y sus resúmenes sin volver a gastar tokens. Solo se llama a la IA si el libro aún no tiene capítulos guardados, si pulsas **Continuar** o si tocas el título de un capítulo y eliges **Resumir con otro modelo** (regenera solo ese capítulo, usando como contexto los anteriores, reemplaza el guardado y desplaza la vista al capítulo con una breve animación de resalte). Al pulsarlo se abre un selector con las claves ya guardadas de cada proveedor y la opción **Añadir una nueva clave** (con el tutorial de 3 pasos y su enlace de la pantalla inicial, selector de proveedor y pegado desde el portapapeles); la clave elegida pasa a ser la activa también para los siguientes capítulos. El menú del capítulo indica el proveedor y modelo que lo generó; los capítulos guardados antes de este cambio muestran «No registrada en este capítulo». El total de capítulos de la obra se muestra en sugerencias, biblioteca y cabecera del resumen. Cada respuesta incluye `is_last`: la IA marca el capítulo que cierra la obra. Cuando eso ocurre, **Continuar** desaparece y se muestran 3 títulos similares, también pedidos a la IA y guardados para no repetir la llamada. La búsqueda arranca en cuanto el stream detecta `is_last`, mientras el capítulo final sigue escribiéndose, y cada título se muestra con su portada. Al pedirlos se excluyen el libro actual y todos los que ya están en la biblioteca, para priorizar títulos que el usuario todavía no leyó; las sugerencias guardadas antes de este cambio se renuevan si incluyen libros ya leídos. Al tocar uno se abre su resumen.
+6. **Mi biblioteca**: enlace disponible en recomendaciones, sugerencias y resúmenes. Lista todos los libros con capítulos guardados, muestra cuántos capítulos tiene cada uno y permite tocar uno para releerlo sin llamar a la IA ni gastar tokens. El orden se elige en una hoja inferior con cinco criterios —«Recientes», «Capítulos resumidos», «Alfabético - Autor», «Alfabético - Título» y «Lecturas»— y dirección ascendente o descendente. «Recientes» usa la última vez que se resumió o se abrió un capítulo del libro; cada apertura de un libro con capítulos guardados cuenta como una lectura. Cada libro tiene un botón **Borrar**, con confirmación, que elimina sus capítulos y sus títulos similares guardados; al regenerarlos volverán a gastar tokens.
+7. **Navegación**: «Cambiar clave» aparece solo en recomendaciones; desde ahí se vuelve a la pantalla de clave, que recupera la key guardada. Sugerencias, resúmenes y biblioteca tienen sus propios enlaces «Volver» para retroceder dentro del flujo. Si abres un libro desde la biblioteca, «Volver» te lleva de vuelta a la biblioteca.
+
+Cada clave de IA se guarda por separado en `expo-secure-store` en móvil (`localStorage` en web), junto con el proveedor seleccionado. El resto de los datos —intereses, sugerencias, biblioteca y capítulos— se guarda en archivos JSON locales dentro del directorio de documentos de la app (o en `localStorage` en web), porque SecureStore tiene un límite de 2048 bytes por valor y los resúmenes lo superan. Los datos escritos antes de este cambio se migran automáticamente la primera vez que se leen, sin perder la biblioteca. Los libros resumidos se enumeran mediante un índice guardado (`bibliary.library`, clave heredada del nombre anterior); los capítulos de cada libro se guardan por separado.
+
+## Uso eficiente de tokens
+
+- Las sugerencias se piden una sola vez y se reutilizan; son exactamente 6 con motivos muy breves.
+- Cada «Continuar» envía una sola línea de contexto (títulos + pista corta) en vez de los resúmenes anteriores completos, así el coste no crece con el número de capítulos.
+- Los 3 títulos similares del final se piden una sola vez por libro y se guardan; esa llamada gasta tokens una vez, como las sugerencias iniciales.
+- Los resúmenes buscan aproximarse al tamaño máximo de una respuesta: 600–900 palabras por capítulo, con un techo de 3000 tokens de salida en Gemini. El coste por capítulo sube respecto a la versión anterior, pero el contexto de entrada sigue siendo mínimo.
+- En Gemini se pide `thinking_level: minimal`; si algún modelo no admite ese ajuste, la app reintenta conservando `max_output_tokens` y solo lo elimina como último recurso.
+- Al cambiar la clave o los intereses se descartan las sugerencias, pero la biblioteca de resúmenes se conserva.
+
+> Esta versión llama a la API de Gemini directamente desde el cliente, sin backend. La clave se guarda con `expo-secure-store` en Android/iOS (Keychain/Keystore) y en `localStorage` en web, que es solo texto plano y sirve para probar. El usuario introduce su propia clave: con 100% cliente, ninguna clave incluida en la app podría considerarse secreta.
+
+> En web, leer el portapapeles requiere un contexto seguro (HTTPS o `localhost`). Si abres la app desde otra IP por HTTP, el botón **Pegar** mostrará un aviso; en ese caso puedes escribir la clave y pulsar **Usar clave**.
+
+## Ejecutar
+
+```bash
+npm install
+npm start
+```
+
+Para probar en el navegador:
+
+```bash
+npm run web -- --port 8082
+```
