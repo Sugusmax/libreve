@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Animated,
   BackHandler,
@@ -577,6 +577,14 @@ export default function BookSummaryScreen({
 
   const isFinished = chapters.some((chapter) => chapter.isLast);
   const isFinishing = isFinished || Boolean(draft?.isLast);
+  // Los capítulos guardados no cambian mientras llega el stream: calcular sus
+  // párrafos una sola vez evita reordenar texto en cada actualización.
+  const savedParagraphs = useMemo(
+    () => chapters.map((chapter) => splitIntoParagraphs(chapter.summary)),
+    [chapters],
+  );
+  const showWorking =
+    isRestoring || isLoading || (isLoadingSimilar && similarBooks.length === 0);
   const largeCover =
     book.coverLargeUrl ?? upgradeCoverUrl(book.coverUrl) ?? book.coverUrl;
   const chapterHighlightStyle = {
@@ -634,7 +642,7 @@ export default function BookSummaryScreen({
             </View>
           </View>
 
-          {chapters.map((chapter) => (
+          {chapters.map((chapter, index) => (
             <Animated.View
               key={chapter.number}
               ref={(node) => {
@@ -657,9 +665,9 @@ export default function BookSummaryScreen({
                 </Text>
               </TouchableOpacity>
               <View style={styles.chapterBody}>
-                {splitIntoParagraphs(chapter.summary).map((paragraph, index) => (
+                {savedParagraphs[index].map((paragraph, paragraphIndex) => (
                   <Text
-                    key={`${chapter.number}-${index}`}
+                    key={`${chapter.number}-${paragraphIndex}`}
                     style={styles.chapterText}
                   >
                     {paragraph}
@@ -686,13 +694,11 @@ export default function BookSummaryScreen({
           ) : null}
 
           <Text style={styles.status}>{status}</Text>
-          {isRestoring ? (
-            <WorkingIndicator />
-          ) : isFinishing ? (
+          {/* Un único indicador para todo el flujo: al cambiar de rama no se
+              desmonta, así que la animación nunca se reinicia a medias. */}
+          {showWorking ? <WorkingIndicator /> : null}
+          {!isRestoring && isFinishing ? (
             <>
-              {isLoading || (isLoadingSimilar && similarBooks.length === 0) ? (
-                <WorkingIndicator />
-              ) : null}
               {similarBooks.length > 0 ? (
                 <View style={styles.similar}>
                   <Text style={styles.similarHeading}>Títulos similares</Text>
@@ -735,14 +741,12 @@ export default function BookSummaryScreen({
                 />
               ) : null}
             </>
-          ) : isLoading ? (
-            <WorkingIndicator />
-          ) : (
+          ) : !isRestoring && !isLoading ? (
             <PrimaryButton
               label="Continuar"
               onPress={() => void loadNextChapter()}
             />
-          )}
+          ) : null}
           <BackLink label={backLabel} onPress={onBack} />
           <TouchableOpacity onPress={onOpenLibrary} accessibilityRole="button">
             <Text style={styles.link}>Mi biblioteca</Text>

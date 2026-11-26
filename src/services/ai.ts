@@ -1,3 +1,4 @@
+import { Platform } from 'react-native';
 import {
   getProvider,
   type AiProvider,
@@ -51,6 +52,158 @@ type JsonSchema = {
   properties: Record<string, unknown>;
   required: string[];
 };
+
+type StreamChunk = string | Uint8Array;
+type StreamBody = {
+  getReader: () => {
+    read: () => Promise<{ done: boolean; value?: StreamChunk }>;
+    releaseLock: () => void;
+  };
+};
+type StreamResponse = Response & { body?: StreamBody };
+
+/**
+ * En React Native, `fetch` está polifillado con whatwg-fetch y no expone
+ * `Response.body`: el texto llega entero al final, así que el streaming se ve
+ * como un bloque. XMLHttpRequest sí entrega el text() recibido hasta el momento
+ * mientras `onreadystatechange` esté definido, así que lo usamos solo cuando
+ * queremos streaming. En web seguimos usando fetch normal.
+ */
+function streamedFetch(url: string, init: RequestInit): Promise<Response> {
+  if (Platform.OS === 'web' || typeof XMLHttpRequest === 'undefined') {
+    return fetch(url, init);
+  }
+
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open(init.method ?? 'GET', url, true);
+
+    const headers = init.headers as Record<string, string> | undefined;
+    if (headers) {
+      Object.entries(headers).forEach(([key, value]) =>
+        xhr.setRequestHeader(key, value),
+      );
+    }
+
+    let buffered = '';
+    let consumed = 0;
+    let finished = false;
+    let resolved = false;
+    let failure: Error | null = null;
+    let pendingRead: {
+      resolve: (value: { done: boolean; value?: StreamChunk }) => void;
+      reject: (error: Error) => void;
+    } | null = null;
+    const queue: string[] = [];
+    const textWaiters: Array<() => void> = [];
+
+    const resolveTextWaiters = () => {
+      textWaiters.splice(0).forEach((notify) => notify());
+    };
+
+    const flush = () => {
+      while (pendingRead && (queue.length > 0 || finished || failure)) {
+        const read = pendingRead;
+        pendingRead = null;
+
+        if (failure) {
+          read.reject(failure);
+        } else if (queue.length > 0) {
+          read.resolve({ done: false, value: queue.shift() });
+        } else {
+          read.resolve({ done: true });
+        }
+      }
+
+      if (finished || failure) {
+        resolveTextWaiters();
+      }
+    };
+
+    const readAvailable = () => {
+      const text = xhr.responseText ?? '';
+      const delta = text.slice(consumed);
+
+      if (delta) {
+        consumed = text.length;
+        buffered += delta;
+        queue.push(delta);
+      }
+    };
+
+    const asResponse = (): Response =>
+      ({
+        ok: xhr.status >= 200 && xhr.status < 300,
+        status: xhr.status,
+        text: () =>
+          new Promise<string>((resolveText) => {
+            if (finished || failure) {
+              resolveText(buffered);
+              return;
+            }
+            textWaiters.push(() => resolveText(buffered));
+          }),
+        body: {
+          getReader: () => ({
+            read: () =>
+              new Promise((resolveRead, rejectRead) => {
+                if (failure) {
+                  rejectRead(failure);
+                  return;
+                }
+                if (queue.length > 0) {
+                  resolveRead({ done: false, value: queue.shift() });
+                  return;
+                }
+                if (finished) {
+                  resolveRead({ done: true });
+                  return;
+                }
+                pendingRead = { resolve: resolveRead, reject: rejectRead };
+              }),
+            releaseLock: () => {},
+          }),
+        },
+      }) as unknown as Response;
+
+    xhr.onreadystatechange = () => {
+      if (xhr.readyState === XMLHttpRequest.HEADERS_RECEIVED && !resolved) {
+        resolved = true;
+        resolve(asResponse());
+        return;
+      }
+
+      if (xhr.readyState === XMLHttpRequest.LOADING) {
+        readAvailable();
+        flush();
+        return;
+      }
+
+      if (xhr.readyState === XMLHttpRequest.DONE) {
+        readAvailable();
+        finished = true;
+        flush();
+
+        if (!resolved) {
+          resolved = true;
+          resolve(asResponse());
+        }
+      }
+    };
+
+    xhr.onerror = () => {
+      failure = new Error('Error de red al conectar con la IA.');
+      if (!resolved) {
+        resolved = true;
+        reject(failure);
+        return;
+      }
+      flush();
+    };
+
+    xhr.send(typeof init.body === 'string' ? init.body : undefined);
+  });
+}
 
 const SYSTEM_PROMPT =
   'Eres un bibliotecario. Recomienda exactamente 6 libros concretos en español. ' +
@@ -317,8 +470,7 @@ async function readSseResponse(
   onChunk: ChunkReporter,
 ): Promise<string> {
   const parser = createSseParser(consume, onChunk);
-  const body = (response as Response & { body?: ReadableStream<Uint8Array> })
-    .body;
+  const body = (response as StreamResponse).body;
 
   if (body && typeof body.getReader === 'function') {
     const reader = body.getReader();
@@ -333,9 +485,11 @@ async function readSseResponse(
         }
 
         parser.push(
-          decoder
-            ? decoder.decode(value, { stream: true })
-            : String.fromCharCode(...Array.from(value)),
+          typeof value === 'string'
+            ? value
+            : decoder
+              ? decoder.decode(value, { stream: true })
+              : String.fromCharCode(...Array.from(value)),
         );
       }
     } finally {
@@ -390,7 +544,8 @@ async function callGemini(
     body.stream = true;
   }
 
-  const response = await fetch(url, {
+  const request = onChunk ? streamedFetch : fetch;
+  const response = await request(url, {
     method: 'POST',
     headers: {
       'Content-Type': 'text/plain',
@@ -493,7 +648,8 @@ async function callOpenAiCompatible(
       : { max_tokens: maxOutputTokens }),
     stream: Boolean(onChunk),
   };
-  const response = await fetch(`${provider.endpoint}/chat/completions`, {
+  const request = onChunk ? streamedFetch : fetch;
+  const response = await request(`${provider.endpoint}/chat/completions`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -587,7 +743,8 @@ async function callAnthropic(
   maxOutputTokens: number,
   onChunk?: ChunkReporter,
 ): Promise<string> {
-  const response = await fetch('https://api.anthropic.com/v1/messages', {
+  const request = onChunk ? streamedFetch : fetch;
+  const response = await request('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: {
       'content-type': 'application/json',
@@ -1170,9 +1327,22 @@ export async function fetchBookSummary(
 ): Promise<BookChapter> {
   const number = targetNumber ?? previousChapters.length + 1;
   let streamedRaw = '';
+  let lastProgressAt = 0;
   const onChunk: ChunkReporter = (chunk, reset) => {
     streamedRaw = reset ? '' : streamedRaw + chunk;
-    onProgress?.(parsePartialChapter(streamedRaw));
+
+    if (reset) {
+      lastProgressAt = 0;
+    }
+
+    // Los proveedores pueden emitir decenas de eventos por segundo. Limitamos
+    // los re-renderizados a ~12 por segundo para que la animación no se trabe.
+    const now = Date.now();
+
+    if (now - lastProgressAt >= 80) {
+      lastProgressAt = now;
+      onProgress?.(parsePartialChapter(streamedRaw));
+    }
   };
   const { text, provider, model } = await requestAiResult(
     SUMMARY_SYSTEM_PROMPT,
