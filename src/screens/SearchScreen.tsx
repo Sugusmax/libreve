@@ -12,7 +12,12 @@ import {
 import { StatusBar } from 'expo-status-bar';
 import BackLink from '../components/BackLink';
 import PrimaryButton from '../components/PrimaryButton';
-import { searchBooks, type SearchedBook } from '../services/bookSearch';
+import {
+  SEARCH_PAGE_SIZE,
+  searchBookIdentity,
+  searchBooks,
+  type SearchedBook,
+} from '../services/bookSearch';
 import { colors } from '../theme/colors';
 import { metrics, scale } from '../theme/metrics';
 
@@ -28,8 +33,12 @@ export default function SearchScreen({
   onSelectBook,
 }: SearchScreenProps) {
   const [query, setQuery] = useState('');
+  const [searchTerm, setSearchTerm] = useState('');
   const [results, setResults] = useState<SearchedBook[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [nextOffset, setNextOffset] = useState(0);
+  const [total, setTotal] = useState(0);
   const [status, setStatus] = useState('');
   const [hasSearched, setHasSearched] = useState(false);
 
@@ -45,21 +54,59 @@ export default function SearchScreen({
     setStatus('');
 
     try {
-      const books = await searchBooks(term);
-      setResults(books);
+      const page = await searchBooks(term, 0);
+      setSearchTerm(term);
+      setResults(page.books);
+      setNextOffset(SEARCH_PAGE_SIZE);
+      setTotal(page.total);
       setHasSearched(true);
       setStatus(
-        books.length === 0
+        page.books.length === 0
           ? `No encontramos libros para «${term}».`
-          : `${books.length} ${books.length === 1 ? 'libro encontrado' : 'libros encontrados'}.`,
+          : `${page.books.length} de ${page.total} ${
+              page.total === 1 ? 'libro encontrado' : 'libros encontrados'
+            }.`,
       );
     } catch (error) {
       setResults([]);
+      setTotal(0);
       setStatus(
         error instanceof Error ? error.message : 'No se pudo completar la búsqueda.',
       );
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const handleLoadMore = async () => {
+    if (!searchTerm || isLoading || isLoadingMore || nextOffset >= total) {
+      return;
+    }
+
+    setIsLoadingMore(true);
+    setStatus('');
+
+    try {
+      const page = await searchBooks(searchTerm, nextOffset);
+      const known = new Set(results.map(searchBookIdentity));
+      const fresh = page.books.filter(
+        (book) => !known.has(searchBookIdentity(book)),
+      );
+
+      setResults((current) => [...current, ...fresh]);
+      setNextOffset(nextOffset + SEARCH_PAGE_SIZE);
+      setTotal(page.total);
+      setStatus(
+        fresh.length === 0
+          ? 'No hay más resultados nuevos para mostrar.'
+          : `${results.length + fresh.length} de ${page.total} libros encontrados.`,
+      );
+    } catch (error) {
+      setStatus(
+        error instanceof Error ? error.message : 'No se pudieron cargar más libros.',
+      );
+    } finally {
+      setIsLoadingMore(false);
     }
   };
 
@@ -122,6 +169,18 @@ export default function SearchScreen({
               </View>
             </TouchableOpacity>
           ))}
+
+          {results.length > 0 && nextOffset < total ? (
+            <PrimaryButton
+              label={
+                isLoadingMore
+                  ? 'Cargando más…'
+                  : `Mostrar ${Math.min(SEARCH_PAGE_SIZE, total - nextOffset)} más`
+              }
+              onPress={() => void handleLoadMore()}
+              disabled={isLoadingMore}
+            />
+          ) : null}
 
           {hasSearched && results.length === 0 && !isLoading ? (
             <Text style={styles.hint}>

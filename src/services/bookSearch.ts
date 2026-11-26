@@ -14,6 +14,18 @@ export type SearchedBook = BookSuggestion & {
   year?: number;
 };
 
+export type SearchPage = {
+  books: SearchedBook[];
+  // Coincidencias totales en Open Library, para saber si quedan más páginas.
+  total: number;
+};
+
+export const SEARCH_PAGE_SIZE = 20;
+
+export function searchBookIdentity(book: SearchedBook): string {
+  return `${book.title.toLowerCase()}|${book.author.toLowerCase()}`;
+}
+
 function coverUrls(doc: OpenLibraryDoc): { small: string; large: string } | null {
   if (typeof doc.cover_i === 'number' && doc.cover_i > 0) {
     return {
@@ -37,16 +49,19 @@ function coverUrls(doc: OpenLibraryDoc): { small: string; large: string } | null
  * ni backend. No sustituye a las sugerencias de la IA: permite resumir cualquier
  * libro, esté o no en la selección del usuario.
  */
-export async function searchBooks(query: string): Promise<SearchedBook[]> {
+export async function searchBooks(
+  query: string,
+  offset = 0,
+): Promise<SearchPage> {
   const term = query.trim();
 
   if (term.length < 2) {
-    return [];
+    return { books: [], total: 0 };
   }
 
   const url = `https://openlibrary.org/search.json?q=${encodeURIComponent(
     term,
-  )}&limit=20&fields=title,author_name,first_publish_year,cover_i,cover_edition_key`;
+  )}&limit=${SEARCH_PAGE_SIZE}&offset=${offset}&fields=title,author_name,first_publish_year,cover_i,cover_edition_key`;
   const response = await fetch(url);
 
   if (!response.ok) {
@@ -55,11 +70,14 @@ export async function searchBooks(query: string): Promise<SearchedBook[]> {
     );
   }
 
-  const data = (await response.json()) as { docs?: OpenLibraryDoc[] };
+  const data = (await response.json()) as {
+    docs?: OpenLibraryDoc[];
+    numFound?: unknown;
+  };
   const fallback = getFallbackCover();
   const seen = new Set<string>();
 
-  return (data.docs ?? []).flatMap((doc): SearchedBook[] => {
+  const books = (data.docs ?? []).flatMap((doc): SearchedBook[] => {
     const title = typeof doc.title === 'string' ? doc.title.trim() : '';
 
     if (!title) {
@@ -78,6 +96,7 @@ export async function searchBooks(query: string): Promise<SearchedBook[]> {
     }
 
     seen.add(identity);
+
 
     const cover = coverUrls(doc);
     const year =
@@ -98,4 +117,9 @@ export async function searchBooks(query: string): Promise<SearchedBook[]> {
       },
     ];
   });
+
+  const total =
+    typeof data.numFound === 'number' ? data.numFound : books.length;
+
+  return { books, total };
 }
