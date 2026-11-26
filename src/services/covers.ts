@@ -24,6 +24,16 @@ const FALLBACK_COVER =
 const FALLBACK_COVER_LARGE =
   'https://images.rawpixel.com/editor_1024/cHJpdmF0ZS9zdGF0aWMvaW1hZ2Uvd2Vic2l0ZS8yMDIyLTA0L2xyL3B4NTQxMjY0LWltYWdlLWt6MmU5ZW03LmpwZw.jpg';
 
+/** Portada CC0 usada cuando la obra no tiene imagen en ningún catálogo. */
+export function getFallbackCover(): CoverInfo {
+  return {
+    url: FALLBACK_COVER,
+    largeUrl: FALLBACK_COVER_LARGE,
+    license: 'cc0',
+    source: 'Openverse',
+  };
+}
+
 /**
  * Open Library permite mostrar sus portadas desde covers.openlibrary.org.
  * La imagen se sirve desde su dominio (no se descarga ni se redistribuye).
@@ -97,16 +107,7 @@ export async function fetchCover(
   const byTitle = withAuthor ? null : await searchOpenLibrary(title);
   const ccImage = withAuthor || byTitle ? null : await searchOpenverse(title);
 
-  return (
-    withAuthor ??
-    byTitle ??
-    ccImage ?? {
-      url: FALLBACK_COVER,
-      largeUrl: FALLBACK_COVER_LARGE,
-      license: 'cc0',
-      source: 'Openverse',
-    }
-  );
+  return withAuthor ?? byTitle ?? ccImage ?? getFallbackCover();
 }
 
 /**

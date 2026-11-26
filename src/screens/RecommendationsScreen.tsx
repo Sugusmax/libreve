@@ -20,6 +20,7 @@ type RecommendationsScreenProps = {
   onReset: () => void;
   onBackToKey: () => void;
   onOpenLibrary: () => void;
+  onOpenSearch: () => void;
   onContinue: (books?: BookSuggestion[]) => void;
 };
 
@@ -29,6 +30,7 @@ export default function RecommendationsScreen({
   onReset,
   onBackToKey,
   onOpenLibrary,
+  onOpenSearch,
   onContinue,
 }: RecommendationsScreenProps) {
   const [isLoading, setIsLoading] = useState(false);
@@ -93,6 +95,9 @@ export default function RecommendationsScreen({
           />
           <TouchableOpacity onPress={onReset} accessibilityRole="button">
             <Text style={styles.link}>Cambiar intereses</Text>
+          </TouchableOpacity>
+          <TouchableOpacity onPress={onOpenSearch} accessibilityRole="button">
+            <Text style={styles.link}>Buscar cualquier libro</Text>
           </TouchableOpacity>
           <TouchableOpacity onPress={onOpenLibrary} accessibilityRole="button">
             <Text style={styles.link}>Mi biblioteca</Text>

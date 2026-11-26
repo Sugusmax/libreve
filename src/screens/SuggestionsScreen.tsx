@@ -17,6 +17,7 @@ type SuggestionsScreenProps = {
   books: BookSuggestion[];
   onBack: () => void;
   onOpenLibrary: () => void;
+  onOpenSearch: () => void;
   onSelectBook: (book: BookSuggestion) => void;
 };
 
@@ -24,6 +25,7 @@ export default function SuggestionsScreen({
   books,
   onBack,
   onOpenLibrary,
+  onOpenSearch,
   onSelectBook,
 }: SuggestionsScreenProps) {
   return (
@@ -73,6 +75,9 @@ export default function SuggestionsScreen({
             accessibilityRole="link"
           >
             <Text style={styles.link}>Portadas cortesía de Open Library</Text>
+          </TouchableOpacity>
+          <TouchableOpacity onPress={onOpenSearch} accessibilityRole="button">
+            <Text style={styles.link}>Buscar cualquier libro</Text>
           </TouchableOpacity>
           <TouchableOpacity onPress={onOpenLibrary} accessibilityRole="button">
             <Text style={styles.link}>Mi biblioteca</Text>

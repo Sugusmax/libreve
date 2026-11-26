@@ -5,6 +5,7 @@ import HomeScreen from './src/screens/HomeScreen';
 import InterestsScreen from './src/screens/InterestsScreen';
 import LibraryScreen from './src/screens/LibraryScreen';
 import RecommendationsScreen from './src/screens/RecommendationsScreen';
+import SearchScreen from './src/screens/SearchScreen';
 import SuggestionsScreen from './src/screens/SuggestionsScreen';
 import { loadApiKey } from './src/services/apiKey';
 import type { BookSuggestion } from './src/services/ai';
@@ -26,10 +27,12 @@ type Screen =
   | 'recommendations'
   | 'suggestions'
   | 'bookSummary'
-  | 'library';
+  | 'library'
+  | 'search';
 
-type LibraryOrigin = 'suggestions' | 'recommendations';
-type SummaryOrigin = 'suggestions' | 'library';
+type LibraryOrigin = 'suggestions' | 'recommendations' | 'search';
+type SummaryOrigin = 'suggestions' | 'library' | 'search';
+type SearchOrigin = 'suggestions' | 'recommendations' | 'library';
 type InterestsOrigin = 'home' | 'recommendations';
 
 function sameInterests(a: string[], b: string[]): boolean {
@@ -75,6 +78,7 @@ export default function App() {
     useState<SummaryOrigin>('suggestions');
   const [interestsOrigin, setInterestsOrigin] =
     useState<InterestsOrigin>('home');
+  const [searchOrigin, setSearchOrigin] = useState<SearchOrigin>('recommendations');
   const [isReady, setIsReady] = useState(false);
   const [interestsCompleted, setInterestsCompleted] = useState(false);
 
@@ -155,6 +159,11 @@ export default function App() {
     setScreen('library');
   };
 
+  const openSearch = (from: SearchOrigin) => {
+    setSearchOrigin(from);
+    setScreen('search');
+  };
+
   const openBook = (book: BookSuggestion, from: SummaryOrigin) => {
     setSelectedBook(book);
     setSummaryOrigin(from);
@@ -165,7 +174,13 @@ export default function App() {
   const closeBook = () => {
     setSelectedBook(null);
     void clearLastBook();
-    setScreen(summaryOrigin === 'library' ? 'library' : 'suggestions');
+    setScreen(
+      summaryOrigin === 'library'
+        ? 'library'
+        : summaryOrigin === 'search'
+          ? 'search'
+          : 'suggestions',
+    );
   };
 
   const goBack = (): boolean => {
@@ -189,6 +204,9 @@ export default function App() {
         return true;
       case 'interests':
         setScreen(interestsOrigin);
+        return true;
+      case 'search':
+        setScreen(searchOrigin);
         return true;
       case 'recommendations':
         // La pantalla de clave es la anterior en el flujo.
@@ -231,6 +249,7 @@ export default function App() {
           setApiKey(key);
           setLibraryOrigin('recommendations');
           setSummaryOrigin('suggestions');
+          setSearchOrigin('recommendations');
           setInterestsOrigin('home');
 
           if (!interestsCompleted) {
@@ -257,6 +276,7 @@ export default function App() {
           setInterestsCompleted(true);
           setLibraryOrigin('recommendations');
           setSummaryOrigin('suggestions');
+          setSearchOrigin('recommendations');
 
           if (changed) {
             setSuggestions([]);
@@ -278,6 +298,7 @@ export default function App() {
         books={suggestions}
         onBack={() => setScreen('recommendations')}
         onOpenLibrary={() => openLibrary('suggestions')}
+        onOpenSearch={() => openSearch('suggestions')}
         onSelectBook={(book) => openBook(book, 'suggestions')}
       />
     );
@@ -291,13 +312,13 @@ export default function App() {
         backLabel={
           summaryOrigin === 'library'
             ? 'Volver a la biblioteca'
-            : 'Volver a sugerencias'
+            : summaryOrigin === 'search'
+              ? 'Volver a la búsqueda'
+              : 'Volver a sugerencias'
         }
         onBack={closeBook}
         onOpenLibrary={() =>
-          openLibrary(
-            summaryOrigin === 'suggestions' ? 'suggestions' : 'recommendations',
-          )
+          openLibrary(summaryOrigin === 'library' ? 'recommendations' : summaryOrigin)
         }
         onSelectBook={(book) => openBook(book, summaryOrigin)}
       />
@@ -308,7 +329,18 @@ export default function App() {
     return (
       <LibraryScreen
         onBack={() => setScreen(libraryOrigin)}
+        onOpenSearch={() => openSearch('library')}
         onSelectBook={(book) => openBook(book, 'library')}
+      />
+    );
+  }
+
+  if (screen === 'search') {
+    return (
+      <SearchScreen
+        onBack={() => setScreen(searchOrigin)}
+        onOpenLibrary={() => openLibrary('search')}
+        onSelectBook={(book) => openBook(book, 'search')}
       />
     );
   }
@@ -320,6 +352,7 @@ export default function App() {
       onReset={() => void handleResetInterests()}
       onBackToKey={() => setScreen('home')}
       onOpenLibrary={() => openLibrary('recommendations')}
+      onOpenSearch={() => openSearch('recommendations')}
       onContinue={(books) => {
         if (books) {
           setSuggestions(books);

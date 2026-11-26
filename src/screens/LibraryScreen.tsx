@@ -24,6 +24,7 @@ import { metrics, scale } from '../theme/metrics';
 
 type LibraryScreenProps = {
   onBack: () => void;
+  onOpenSearch: () => void;
   onSelectBook: (book: BookSuggestion) => void;
 };
 
@@ -46,6 +47,7 @@ const DIRECTIONS: { id: SortDirection; label: string; arrow: string }[] = [
 
 export default function LibraryScreen({
   onBack,
+  onOpenSearch,
   onSelectBook,
 }: LibraryScreenProps) {
   const [entries, setEntries] = useState<LibraryEntry[]>([]);
@@ -256,6 +258,9 @@ export default function LibraryScreen({
           ))}
 
           <Text style={styles.status}>{status}</Text>
+          <TouchableOpacity onPress={onOpenSearch} accessibilityRole="button">
+            <Text style={styles.link}>Buscar cualquier libro</Text>
+          </TouchableOpacity>
           <PrimaryButton label="Volver" onPress={onBack} />
         </View>
       </ScrollView>
@@ -591,6 +596,13 @@ const styles = StyleSheet.create({
     fontSize: metrics.font.body,
     fontWeight: '600',
     textAlign: 'center',
+  },
+  link: {
+    color: colors.primary,
+    fontSize: metrics.font.body,
+    fontWeight: '600',
+    textAlign: 'center',
+    textDecorationLine: 'underline',
   },
   modalBackdrop: {
     flex: 1,
