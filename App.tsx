@@ -21,19 +21,14 @@ import {
 import { hasCompletedInterests, loadInterests } from './src/services/preferences';
 import { colors } from './src/theme/colors';
 
-type Screen =
-  | 'home'
-  | 'interests'
-  | 'recommendations'
-  | 'suggestions'
-  | 'bookSummary'
-  | 'library'
-  | 'search';
-
-type LibraryOrigin = 'suggestions' | 'recommendations' | 'search';
-type SummaryOrigin = 'suggestions' | 'library' | 'search';
-type SearchOrigin = 'suggestions' | 'recommendations' | 'library';
-type InterestsOrigin = 'home' | 'recommendations';
+type Route =
+  | { name: 'home' }
+  | { name: 'interests' }
+  | { name: 'recommendations' }
+  | { name: 'suggestions' }
+  | { name: 'bookSummary'; book: BookSuggestion }
+  | { name: 'library' }
+  | { name: 'search' };
 
 function sameInterests(a: string[], b: string[]): boolean {
   if (a.length !== b.length) {
@@ -45,42 +40,61 @@ function sameInterests(a: string[], b: string[]): boolean {
   return left.every((id, index) => id === right[index]);
 }
 
-function getRestoredScreen(
+function getRestoredStack(
   savedApiKey: string,
   completed: boolean,
   savedSuggestions: BookSuggestion[],
-  hasSelectedBook: boolean,
-): Screen {
+  savedBook: BookSuggestion | null,
+): Route[] {
+  const stack: Route[] = [{ name: 'home' }];
+
   if (!savedApiKey) {
-    return 'home';
+    return stack;
   }
 
   if (!completed) {
-    return 'interests';
+    return [...stack, { name: 'interests' }];
   }
+
+  stack.push({ name: 'recommendations' });
 
   if (savedSuggestions.length > 0) {
-    return hasSelectedBook ? 'bookSummary' : 'suggestions';
+    stack.push({ name: 'suggestions' });
+
+    if (savedBook && savedSuggestions.some((book) => booksMatch(book, savedBook))) {
+      stack.push({ name: 'bookSummary', book: savedBook });
+    }
   }
 
-  return 'recommendations';
+  return stack;
+}
+
+function getBackLabel(previous: Route | undefined): string {
+  switch (previous?.name) {
+    case 'library':
+      return 'Volver a la biblioteca';
+    case 'search':
+      return 'Volver a la búsqueda';
+    case 'bookSummary':
+      return 'Volver al libro anterior';
+    case 'suggestions':
+      return 'Volver a sugerencias';
+    default:
+      return 'Volver';
+  }
 }
 
 export default function App() {
-  const [screen, setScreen] = useState<Screen>('home');
+  // Pila de navegación: «atrás» siempre vuelve a la ruta que empujó la actual.
+  const [stack, setStack] = useState<Route[]>([{ name: 'home' }]);
   const [apiKey, setApiKey] = useState('');
   const [interests, setInterests] = useState<string[]>([]);
   const [suggestions, setSuggestions] = useState<BookSuggestion[]>([]);
-  const [selectedBook, setSelectedBook] = useState<BookSuggestion | null>(null);
-  const [libraryOrigin, setLibraryOrigin] =
-    useState<LibraryOrigin>('recommendations');
-  const [summaryOrigin, setSummaryOrigin] =
-    useState<SummaryOrigin>('suggestions');
-  const [interestsOrigin, setInterestsOrigin] =
-    useState<InterestsOrigin>('home');
-  const [searchOrigin, setSearchOrigin] = useState<SearchOrigin>('recommendations');
   const [isReady, setIsReady] = useState(false);
   const [interestsCompleted, setInterestsCompleted] = useState(false);
+
+  const route = stack[stack.length - 1];
+  const screen = route.name;
 
   useEffect(() => {
     let active = true;
@@ -111,29 +125,19 @@ export default function App() {
 
         if (savedSuggestions.length > 0) {
           setSuggestions(savedSuggestions);
-
-          if (
-            savedBook &&
-            savedSuggestions.some((book) => booksMatch(book, savedBook))
-          ) {
-            setSelectedBook(savedBook);
-          }
         }
 
-        setScreen(
-          getRestoredScreen(
+        setStack(
+          getRestoredStack(
             apiKey ?? '',
             completed,
             savedSuggestions,
-            Boolean(
-              savedBook &&
-                savedSuggestions.some((book) => booksMatch(book, savedBook)),
-            ),
+            savedBook,
           ),
         );
       } catch {
         if (active) {
-          setScreen('home');
+          setStack([{ name: 'home' }]);
         }
       } finally {
         if (active) {
@@ -147,87 +151,61 @@ export default function App() {
     };
   }, []);
 
-  const handleResetInterests = () => {
-    // Conservamos los intereses guardados para que aparezcan seleccionados.
-    // Las sugerencias solo se descartan si al guardar han cambiado los temas.
-    setInterestsOrigin('recommendations');
-    setScreen('interests');
+  const push = (next: Route) => {
+    setStack((current) => [...current, next]);
+
+    if (next.name === 'bookSummary') {
+      void saveLastBook(next.book);
+    } else {
+      void clearLastBook();
+    }
   };
 
-  const openLibrary = (from: LibraryOrigin) => {
-    setLibraryOrigin(from);
-    setScreen('library');
+  const pop = (): boolean => {
+    if (!isReady || stack.length <= 1) {
+      return false;
+    }
+
+    const previous = stack[stack.length - 2];
+    setStack(stack.slice(0, -1));
+
+    if (previous.name === 'bookSummary') {
+      void saveLastBook(previous.book);
+    } else {
+      void clearLastBook();
+    }
+
+    return true;
   };
 
-  const openSearch = (from: SearchOrigin) => {
-    setSearchOrigin(from);
-    setScreen('search');
-  };
-
-  const openBook = (book: BookSuggestion, from: SummaryOrigin) => {
-    setSelectedBook(book);
-    setSummaryOrigin(from);
-    void saveLastBook(book);
-    setScreen('bookSummary');
-  };
-
-  const closeBook = () => {
-    setSelectedBook(null);
+  const goHome = () => {
+    setStack([{ name: 'home' }]);
     void clearLastBook();
-    setScreen(
-      summaryOrigin === 'library'
-        ? 'library'
-        : summaryOrigin === 'search'
-          ? 'search'
-          : 'suggestions',
-    );
   };
 
-  const goBack = (): boolean => {
-    if (!isReady) {
-      return true;
+  const returnToRecommendations = (books: BookSuggestion[]) => {
+    const next: Route[] = [{ name: 'home' }, { name: 'recommendations' }];
+
+    if (books.length > 0) {
+      next.push({ name: 'suggestions' });
     }
 
-    switch (screen) {
-      case 'bookSummary':
-        if (selectedBook) {
-          closeBook();
-        } else {
-          setScreen('suggestions');
-        }
-        return true;
-      case 'library':
-        setScreen(libraryOrigin);
-        return true;
-      case 'suggestions':
-        setScreen('recommendations');
-        return true;
-      case 'interests':
-        setScreen(interestsOrigin);
-        return true;
-      case 'search':
-        setScreen(searchOrigin);
-        return true;
-      case 'recommendations':
-        // La pantalla de clave es la anterior en el flujo.
-        setScreen('home');
-        return true;
-      case 'home':
-        // En la pantalla inicial dejamos que Android cierre la app.
-        return false;
-    }
+    setStack(next);
+    void clearLastBook();
   };
+
+  const openBook = (book: BookSuggestion) => push({ name: 'bookSummary', book });
 
   // Se registra una sola vez al montar App. Así, los listeners que registren
   // las pantallas para cerrar sus modales se ejecutan primero (RN los llama en
   // orden inverso de registro) y pueden consumir el evento.
-  const goBackRef = useRef(goBack);
-  goBackRef.current = goBack;
+  const popRef = useRef(pop);
+  popRef.current = pop;
 
   useEffect(() => {
     const subscription = BackHandler.addEventListener(
       'hardwareBackPress',
-      () => goBackRef.current(),
+      () => popRef.current(),
     );
 
     return () => subscription.remove();
@@ -247,19 +225,15 @@ export default function App() {
         initialApiKey={apiKey}
         onKeyReady={(key) => {
           setApiKey(key);
-          setLibraryOrigin('recommendations');
-          setSummaryOrigin('suggestions');
-          setSearchOrigin('recommendations');
-          setInterestsOrigin('home');
 
           if (!interestsCompleted) {
-            setScreen('interests');
+            setStack([{ name: 'home' }, { name: 'interests' }]);
             return;
           }
 
           // Cambiar de clave no cambia los intereses: reutilizamos las
           // sugerencias guardadas para no gastar peticiones nuevas.
-          setScreen(suggestions.length > 0 ? 'suggestions' : 'recommendations');
+          returnToRecommendations(suggestions);
         }}
       />
     );
@@ -274,19 +248,13 @@ export default function App() {
 
           setInterests(ids);
           setInterestsCompleted(true);
-          setLibraryOrigin('recommendations');
-          setSummaryOrigin('suggestions');
-          setSearchOrigin('recommendations');
 
           if (changed) {
             setSuggestions([]);
-            setSelectedBook(null);
             void clearSuggestions();
-            setScreen('recommendations');
-            return;
           }
 
-          setScreen(suggestions.length > 0 ? 'suggestions' : 'recommendations');
+          returnToRecommendations(changed ? [] : suggestions);
         }}
       />
     );
@@ -296,31 +264,23 @@ export default function App() {
     return (
       <SuggestionsScreen
         books={suggestions}
-        onBack={() => setScreen('recommendations')}
-        onOpenLibrary={() => openLibrary('suggestions')}
-        onOpenSearch={() => openSearch('suggestions')}
-        onSelectBook={(book) => openBook(book, 'suggestions')}
+        onBack={pop}
+        onOpenLibrary={() => push({ name: 'library' })}
+        onOpenSearch={() => push({ name: 'search' })}
+        onSelectBook={openBook}
       />
     );
   }
 
-  if (screen === 'bookSummary' && selectedBook) {
+  if (screen === 'bookSummary' && route.name === 'bookSummary') {
     return (
       <BookSummaryScreen
-        key={`${selectedBook.title}|${selectedBook.author}`}
-        book={selectedBook}
-        backLabel={
-          summaryOrigin === 'library'
-            ? 'Volver a la biblioteca'
-            : summaryOrigin === 'search'
-              ? 'Volver a la búsqueda'
-              : 'Volver a sugerencias'
-        }
-        onBack={closeBook}
-        onOpenLibrary={() =>
-          openLibrary(summaryOrigin === 'library' ? 'recommendations' : summaryOrigin)
-        }
-        onSelectBook={(book) => openBook(book, summaryOrigin)}
+        key={`${route.book.title}|${route.book.author}`}
+        book={route.book}
+        backLabel={getBackLabel(stack[stack.length - 2])}
+        onBack={pop}
+        onOpenLibrary={() => push({ name: 'library' })}
+        onSelectBook={openBook}
       />
     );
   }
@@ -328,9 +288,9 @@ export default function App() {
   if (screen === 'library') {
     return (
       <LibraryScreen
-        onBack={() => setScreen(libraryOrigin)}
-        onOpenSearch={() => openSearch('library')}
-        onSelectBook={(book) => openBook(book, 'library')}
+        onBack={pop}
+        onOpenSearch={() => push({ name: 'search' })}
+        onSelectBook={openBook}
       />
     );
   }
@@ -338,9 +298,9 @@ export default function App() {
   if (screen === 'search') {
     return (
       <SearchScreen
-        onBack={() => setScreen(searchOrigin)}
-        onOpenLibrary={() => openLibrary('search')}
-        onSelectBook={(book) => openBook(book, 'search')}
+        onBack={pop}
+        onOpenLibrary={() => push({ name: 'library' })}
+        onSelectBook={openBook}
       />
     );
   }
@@ -349,17 +309,18 @@ export default function App() {
     <RecommendationsScreen
       interests={interests}
       hasSuggestions={suggestions.length > 0}
-      onReset={() => void handleResetInterests()}
-      onBackToKey={() => setScreen('home')}
-      onOpenLibrary={() => openLibrary('recommendations')}
-      onOpenSearch={() => openSearch('recommendations')}
+      onReset={() => push({ name: 'interests' })}
+      onBackToKey={goHome}
+      onOpenLibrary={() => push({ name: 'library' })}
+      onOpenSearch={() => push({ name: 'search' })}
       onContinue={(books) => {
         if (books) {
           setSuggestions(books);
           void saveSuggestions(books);
           void clearLastBook();
         }
-        setScreen('suggestions');
+
+        push({ name: 'suggestions' });
       }}
     />
   );
