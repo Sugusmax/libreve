@@ -13,4 +13,5 @@ yarn-error.log*
 *.jks
 *.keystore
 !android/app/debug.keystore
+android/keystore.properties
 .DS_Store

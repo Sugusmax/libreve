@@ -14,7 +14,7 @@
       "**/*"
     ],
     "android": {
-      "package": "com.libreve.app"
+      "package": "com.libreve.native"
     },
     "ios": {
       "supportsTablet": true
