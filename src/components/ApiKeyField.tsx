@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import {
   StyleSheet,
   Text,
@@ -6,21 +6,24 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { colors } from '../theme/colors';
+import { colors as fallbackColors, type Palette } from '../theme/colors';
 import { metrics, scale } from '../theme/metrics';
 
 type ApiKeyFieldProps = {
   value: string;
   onChangeText: (value: string) => void;
   onPaste: () => void;
+  colors?: Palette;
 };
 
 export default function ApiKeyField({
   value,
   onChangeText,
   onPaste,
+  colors = fallbackColors,
 }: ApiKeyFieldProps) {
   const [isVisible, setIsVisible] = useState(false);
+  const styles = useMemo(() => createStyles(colors), [colors]);
 
   return (
     <View style={styles.container}>
@@ -61,44 +64,46 @@ export default function ApiKeyField({
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    width: '100%',
-    gap: metrics.spacing.xs,
-  },
-  label: {
-    color: colors.text,
-    fontSize: metrics.font.body,
-    fontWeight: '600',
-    textAlign: 'center',
-  },
-  inputRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    width: '100%',
-    borderWidth: scale(1),
-    borderColor: colors.border,
-    borderRadius: metrics.radius.sm,
-    backgroundColor: colors.background,
-    paddingHorizontal: metrics.spacing.sm,
-    gap: metrics.spacing.xs,
-    overflow: 'hidden',
-  },
-  input: {
-    flex: 1,
-    minWidth: 0,
-    color: colors.text,
-    fontSize: metrics.font.input,
-    paddingVertical: metrics.spacing.md,
-    textAlign: 'center',
-  },
-  action: {
-    flexShrink: 0,
-    paddingVertical: metrics.spacing.xs,
-  },
-  actionText: {
-    color: colors.primary,
-    fontSize: metrics.font.body,
-    fontWeight: '600',
-  },
-});
+function createStyles(colors: Palette) {
+  return StyleSheet.create({
+    container: {
+      width: '100%',
+      gap: metrics.spacing.xs,
+    },
+    label: {
+      color: colors.text,
+      fontSize: metrics.font.body,
+      fontWeight: '600',
+      textAlign: 'center',
+    },
+    inputRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      width: '100%',
+      borderWidth: scale(1),
+      borderColor: colors.border,
+      borderRadius: metrics.radius.sm,
+      backgroundColor: colors.background,
+      paddingHorizontal: metrics.spacing.sm,
+      gap: metrics.spacing.xs,
+      overflow: 'hidden',
+    },
+    input: {
+      flex: 1,
+      minWidth: 0,
+      color: colors.text,
+      fontSize: metrics.font.input,
+      paddingVertical: metrics.spacing.md,
+      textAlign: 'center',
+    },
+    action: {
+      flexShrink: 0,
+      paddingVertical: metrics.spacing.xs,
+    },
+    actionText: {
+      color: colors.primary,
+      fontSize: metrics.font.body,
+      fontWeight: '600',
+    },
+  });
+}

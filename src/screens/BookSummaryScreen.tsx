@@ -43,7 +43,14 @@ import {
   saveChapters,
   saveSimilarBooks,
 } from '../services/library';
-import { colors } from '../theme/colors';
+import {
+  getSystemScheme,
+  loadTheme,
+  saveTheme,
+  subscribeToSystemScheme,
+  type ColorScheme,
+} from '../services/theme';
+import { resolveColors, type Palette, type ThemeMode } from '../theme/colors';
 import { metrics, scale } from '../theme/metrics';
 
 type BookSummaryScreenProps = {
@@ -122,6 +129,8 @@ export default function BookSummaryScreen({
   const [newProviderId, setNewProviderId] = useState<ProviderId>('gemini');
   const [newKey, setNewKey] = useState('');
   const [keyStatus, setKeyStatus] = useState('');
+  const [themeMode, setThemeMode] = useState<ThemeMode>('light');
+  const [systemScheme, setSystemScheme] = useState<ColorScheme>(getSystemScheme);
   const [highlightedChapter, setHighlightedChapter] = useState<number | null>(
     null,
   );
@@ -134,6 +143,25 @@ export default function BookSummaryScreen({
   const userScrolledRef = useRef(false);
   const similarRequestedRef = useRef(false);
   const lastOffsetRef = useRef(0);
+
+  useEffect(() => {
+    let active = true;
+
+    void loadTheme()
+      .then((mode) => {
+        if (active) {
+          setThemeMode(mode);
+        }
+      })
+      .catch(() => undefined);
+
+    const unsubscribe = subscribeToSystemScheme(setSystemScheme);
+
+    return () => {
+      active = false;
+      unsubscribe();
+    };
+  }, []);
 
   // El botón/gesto «atrás» cierra primero el diálogo abierto; si no hay
   // ninguno, el evento llega a App.tsx y vuelve a la pantalla anterior.
@@ -587,6 +615,10 @@ export default function BookSummaryScreen({
     isRestoring || isLoading || (isLoadingSimilar && similarBooks.length === 0);
   const largeCover =
     book.coverLargeUrl ?? upgradeCoverUrl(book.coverUrl) ?? book.coverUrl;
+  const activeScheme: ColorScheme =
+    themeMode === 'auto' ? systemScheme : themeMode;
+  const colors = useMemo(() => resolveColors(activeScheme), [activeScheme]);
+  const styles = useMemo(() => createStyles(colors), [colors]);
   const chapterHighlightStyle = {
     backgroundColor: highlightRef.interpolate({
       inputRange: [0, 1],
@@ -601,7 +633,7 @@ export default function BookSummaryScreen({
 
   return (
     <View style={styles.container}>
-      <StatusBar style="dark" />
+      <StatusBar style={activeScheme === 'dark' ? 'light' : 'dark'} />
       <ScrollView
         ref={scrollRef}
         contentContainerStyle={styles.content}
@@ -610,6 +642,47 @@ export default function BookSummaryScreen({
       >
         <View style={styles.card}>
           <Text style={styles.eyebrow}>RESUMEN POR CAPÍTULOS</Text>
+
+          <View style={styles.themeRow}>
+            <Text style={styles.themeLabel}>Tema de lectura</Text>
+            <View style={styles.themeOptions}>
+              {(
+                [
+                  ['light', 'Claro'],
+                  ['dark', 'Oscuro'],
+                  ['auto', 'Auto'],
+                ] as const
+              ).map(([mode, label]) => {
+                const selected = mode === themeMode;
+
+                return (
+                  <TouchableOpacity
+                    key={mode}
+                    style={[
+                      styles.themeChip,
+                      selected ? styles.themeChipSelected : null,
+                    ]}
+                    onPress={() => {
+                      setThemeMode(mode);
+                      void saveTheme(mode);
+                    }}
+                    accessibilityRole="button"
+                    accessibilityState={{ selected }}
+                    accessibilityLabel={`Tema ${label}`}
+                  >
+                    <Text
+                      style={[
+                        styles.themeChipText,
+                        selected ? styles.themeChipTextSelected : null,
+                      ]}
+                    >
+                      {label}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          </View>
 
           <View style={styles.bookHeader}>
             {book.coverUrl ? (
@@ -696,7 +769,7 @@ export default function BookSummaryScreen({
           <Text style={styles.status}>{status}</Text>
           {/* Un único indicador para todo el flujo: al cambiar de rama no se
               desmonta, así que la animación nunca se reinicia a medias. */}
-          {showWorking ? <WorkingIndicator /> : null}
+          {showWorking ? <WorkingIndicator colors={colors} /> : null}
           {!isRestoring && isFinishing ? (
             <>
               {similarBooks.length > 0 ? (
@@ -735,19 +808,19 @@ export default function BookSummaryScreen({
                   ))}
                 </View>
               ) : !isLoading && !isLoadingSimilar ? (
-                <PrimaryButton
+                <PrimaryButton colors={colors}
                   label="Reintentar sugerencias"
                   onPress={() => void loadSimilar()}
                 />
               ) : null}
             </>
           ) : !isRestoring && !isLoading ? (
-            <PrimaryButton
+            <PrimaryButton colors={colors}
               label="Continuar"
               onPress={() => void loadNextChapter()}
             />
           ) : null}
-          <BackLink label={backLabel} onPress={onBack} />
+          <BackLink colors={colors} label={backLabel} onPress={onBack} />
           <TouchableOpacity onPress={onOpenLibrary} accessibilityRole="button">
             <Text style={styles.link}>Mi biblioteca</Text>
           </TouchableOpacity>
@@ -817,9 +890,9 @@ export default function BookSummaryScreen({
               IA: {menuChapter?.aiUsed ?? 'No registrada en este capítulo'}
             </Text>
             {isLoading ? (
-              <WorkingIndicator />
+              <WorkingIndicator colors={colors} />
             ) : (
-              <PrimaryButton
+              <PrimaryButton colors={colors}
                 label="Resumir con otro modelo"
                 onPress={() => {
                   if (menuChapter) {
@@ -898,15 +971,15 @@ export default function BookSummaryScreen({
                       );
                     })}
                   </View>
-                  <ApiKeyField
+                  <ApiKeyField colors={colors}
                     value={newKey}
                     onChangeText={setNewKey}
                     onPaste={() => void pasteNewKey()}
                   />
-                  <ApiKeyHelp provider={getProvider(newProviderId)} />
+                  <ApiKeyHelp colors={colors} provider={getProvider(newProviderId)} />
                   <Text style={styles.keyStatus}>{keyStatus}</Text>
                 </ScrollView>
-                <PrimaryButton
+                <PrimaryButton colors={colors}
                   label="Guardar y resumir"
                   onPress={() => void regenerateWithNewKey()}
                 />
@@ -941,7 +1014,7 @@ export default function BookSummaryScreen({
                     );
                   })}
                 </ScrollView>
-                <PrimaryButton
+                <PrimaryButton colors={colors}
                   label="Añadir una nueva clave"
                   onPress={() => {
                     setNewProviderId(modelPicker?.active ?? 'gemini');
@@ -965,284 +1038,321 @@ export default function BookSummaryScreen({
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: colors.background,
-  },
-  content: {
-    flexGrow: 1,
-    width: '100%',
-    paddingHorizontal: '6%',
-    paddingVertical: metrics.spacing.xl,
-  },
-  card: {
-    width: '100%',
-    alignItems: 'center',
-    backgroundColor: colors.surface,
-    borderRadius: metrics.radius.lg,
-    padding: metrics.spacing.lg,
-    gap: metrics.spacing.md,
-    shadowColor: colors.primaryDark,
-    shadowOpacity: 0.08,
-    shadowRadius: metrics.radius.md,
-    shadowOffset: { width: 0, height: scale(6) },
-    elevation: 3,
-  },
-  eyebrow: {
-    color: colors.accent,
-    fontSize: metrics.font.eyebrow,
-    fontWeight: '700',
-    letterSpacing: scale(1.4),
-    textAlign: 'center',
-  },
-  bookHeader: {
-    alignSelf: 'stretch',
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: metrics.spacing.sm,
-  },
-  cover: {
-    width: scale(70),
-    height: scale(105),
-    borderRadius: metrics.radius.sm,
-    backgroundColor: colors.hint,
-  },
-  coverBackdrop: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'rgba(0, 0, 0, 0.9)',
-    padding: metrics.spacing.lg,
-    gap: metrics.spacing.md,
-  },
-  coverLarge: {
-    width: '100%',
-    maxWidth: scale(420),
-    height: '70%',
-  },
-  coverHint: {
-    color: '#FFFFFF',
-    fontSize: metrics.font.body,
-    fontWeight: '600',
-    textAlign: 'center',
-  },
-  bookInfo: {
-    flex: 1,
-    gap: metrics.spacing.xs,
-  },
-  bookTitle: {
-    color: colors.primaryDark,
-    fontSize: metrics.font.heading,
-    fontWeight: '700',
-  },
-  bookAuthor: {
-    color: colors.accent,
-    fontSize: metrics.font.body,
-    fontWeight: '600',
-  },
-  chapterMeta: {
-    color: colors.muted,
-    fontSize: metrics.font.body,
-  },
-  chapter: {
-    alignSelf: 'stretch',
-    backgroundColor: colors.hint,
-    borderRadius: metrics.radius.md,
-    padding: metrics.spacing.md,
-    gap: metrics.spacing.xs,
-  },
-  draft: {
-    opacity: 0.85,
-  },
-  draftHeading: {
-    color: colors.primaryDark,
-    fontSize: metrics.font.body,
-    fontWeight: '700',
-  },
-  chapterHeading: {
-    color: colors.primaryDark,
-    fontSize: metrics.font.body,
-    fontWeight: '700',
-    textDecorationLine: 'underline',
-  },
-  chapterBody: {
-    gap: metrics.spacing.sm,
-  },
-  chapterText: {
-    color: colors.text,
-    fontSize: metrics.font.body,
-    lineHeight: scale(20),
-  },
-  similar: {
-    alignSelf: 'stretch',
-    backgroundColor: colors.hint,
-    borderRadius: metrics.radius.md,
-    padding: metrics.spacing.md,
-    gap: metrics.spacing.sm,
-  },
-  similarHeading: {
-    color: colors.primaryDark,
-    fontSize: metrics.font.body,
-    fontWeight: '700',
-    textAlign: 'center',
-  },
-  similarItem: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: metrics.spacing.sm,
-  },
-  similarCover: {
-    width: scale(56),
-    height: scale(84),
-    borderRadius: metrics.radius.sm,
-    backgroundColor: colors.hint,
-  },
-  similarInfo: {
-    flex: 1,
-    gap: metrics.spacing.xs,
-  },
-  similarTitle: {
-    color: colors.primaryDark,
-    fontSize: metrics.font.body,
-    fontWeight: '700',
-  },
-  similarAuthor: {
-    color: colors.accent,
-    fontSize: metrics.font.body,
-    fontWeight: '600',
-  },
-  similarReason: {
-    color: colors.muted,
-    fontSize: metrics.font.body,
-  },
-  similarChapters: {
-    color: colors.accent,
-    fontSize: metrics.font.body,
-    fontWeight: '600',
-  },
-  modalBackdrop: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'rgba(0, 0, 0, 0.45)',
-    padding: metrics.spacing.lg,
-  },
-  menu: {
-    width: '100%',
-    maxWidth: scale(340),
-    alignItems: 'center',
-    gap: metrics.spacing.md,
-    backgroundColor: colors.surface,
-    borderRadius: metrics.radius.lg,
-    padding: metrics.spacing.lg,
-  },
-  menuTitle: {
-    color: colors.primaryDark,
-    fontSize: metrics.font.heading,
-    fontWeight: '700',
-    textAlign: 'center',
-  },
-  menuSubtitle: {
-    color: colors.muted,
-    fontSize: metrics.font.body,
-    textAlign: 'center',
-  },
-  menuMeta: {
-    color: colors.accent,
-    fontSize: metrics.font.body,
-    fontWeight: '600',
-    textAlign: 'center',
-  },
-  modelMenu: {
-    maxHeight: '92%',
-  },
-  modelList: {
-    width: '100%',
-    maxHeight: scale(240),
-  },
-  keyFormList: {
-    width: '100%',
-    maxHeight: scale(620),
-  },
-  keyFormContent: {
-    alignItems: 'center',
-    gap: metrics.spacing.sm,
-  },
-  modelOption: {
-    width: '100%',
-    alignItems: 'flex-start',
-    borderWidth: scale(1),
-    borderColor: colors.border,
-    borderRadius: metrics.radius.sm,
-    paddingHorizontal: metrics.spacing.sm,
-    paddingVertical: metrics.spacing.xs,
-    gap: scale(2),
-  },
-  modelOptionLabel: {
-    color: colors.primaryDark,
-    fontSize: metrics.font.body,
-    fontWeight: '700',
-  },
-  modelOptionMeta: {
-    color: colors.muted,
-    fontSize: metrics.font.body,
-  },
-  providerLabel: {
-    color: colors.primary,
-    fontSize: metrics.font.body,
-    fontWeight: '700',
-    textAlign: 'center',
-  },
-  providerChips: {
-    width: '100%',
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'center',
-    gap: metrics.spacing.xs,
-  },
-  providerChip: {
-    borderWidth: scale(1),
-    borderColor: colors.border,
-    borderRadius: metrics.radius.pill,
-    paddingHorizontal: metrics.spacing.sm,
-    paddingVertical: metrics.spacing.xs,
-  },
-  providerChipSelected: {
-    backgroundColor: colors.primary,
-    borderColor: colors.primary,
-  },
-  providerChipText: {
-    color: colors.muted,
-    fontSize: metrics.font.body,
-    fontWeight: '600',
-  },
-  providerChipTextSelected: {
-    color: colors.surface,
-  },
-  keyStatus: {
-    color: colors.primary,
-    fontSize: metrics.font.body,
-    fontWeight: '600',
-    textAlign: 'center',
-  },
-  status: {
-    color: colors.primary,
-    fontSize: metrics.font.body,
-    fontWeight: '600',
-    textAlign: 'center',
-  },
-  link: {
-    color: colors.primary,
-    fontSize: metrics.font.body,
-    fontWeight: '600',
-    textAlign: 'center',
-    textDecorationLine: 'underline',
-  },
-  devLink: {
-    color: colors.muted,
-    fontSize: metrics.font.body,
-    textAlign: 'center',
-    textDecorationLine: 'underline',
-  },
-});
+function createStyles(colors: Palette) {
+  return StyleSheet.create({
+    container: {
+      flex: 1,
+      backgroundColor: colors.background,
+    },
+    content: {
+      flexGrow: 1,
+      width: '100%',
+      paddingHorizontal: '6%',
+      paddingVertical: metrics.spacing.xl,
+    },
+    card: {
+      width: '100%',
+      alignItems: 'center',
+      backgroundColor: colors.surface,
+      borderRadius: metrics.radius.lg,
+      padding: metrics.spacing.lg,
+      gap: metrics.spacing.md,
+      shadowColor: colors.primaryDark,
+      shadowOpacity: 0.08,
+      shadowRadius: metrics.radius.md,
+      shadowOffset: { width: 0, height: scale(6) },
+      elevation: 3,
+    },
+    eyebrow: {
+      color: colors.accent,
+      fontSize: metrics.font.eyebrow,
+      fontWeight: '700',
+      letterSpacing: scale(1.4),
+      textAlign: 'center',
+    },
+    bookHeader: {
+      alignSelf: 'stretch',
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: metrics.spacing.sm,
+    },
+    cover: {
+      width: scale(70),
+      height: scale(105),
+      borderRadius: metrics.radius.sm,
+      backgroundColor: colors.hint,
+    },
+    coverBackdrop: {
+      flex: 1,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: 'rgba(0, 0, 0, 0.9)',
+      padding: metrics.spacing.lg,
+      gap: metrics.spacing.md,
+    },
+    coverLarge: {
+      width: '100%',
+      maxWidth: scale(420),
+      height: '70%',
+    },
+    coverHint: {
+      color: '#FFFFFF',
+      fontSize: metrics.font.body,
+      fontWeight: '600',
+      textAlign: 'center',
+    },
+    bookInfo: {
+      flex: 1,
+      gap: metrics.spacing.xs,
+    },
+    bookTitle: {
+      color: colors.primaryDark,
+      fontSize: metrics.font.heading,
+      fontWeight: '700',
+    },
+    bookAuthor: {
+      color: colors.accent,
+      fontSize: metrics.font.body,
+      fontWeight: '600',
+    },
+    chapterMeta: {
+      color: colors.muted,
+      fontSize: metrics.font.body,
+    },
+    chapter: {
+      alignSelf: 'stretch',
+      backgroundColor: colors.hint,
+      borderRadius: metrics.radius.md,
+      padding: metrics.spacing.md,
+      gap: metrics.spacing.xs,
+    },
+    draft: {
+      opacity: 0.85,
+    },
+    draftHeading: {
+      color: colors.primaryDark,
+      fontSize: metrics.font.body,
+      fontWeight: '700',
+    },
+    chapterHeading: {
+      color: colors.primaryDark,
+      fontSize: metrics.font.body,
+      fontWeight: '700',
+      textDecorationLine: 'underline',
+    },
+    chapterBody: {
+      gap: metrics.spacing.sm,
+    },
+    chapterText: {
+      color: colors.text,
+      fontSize: metrics.font.body,
+      lineHeight: scale(20),
+    },
+    similar: {
+      alignSelf: 'stretch',
+      backgroundColor: colors.hint,
+      borderRadius: metrics.radius.md,
+      padding: metrics.spacing.md,
+      gap: metrics.spacing.sm,
+    },
+    similarHeading: {
+      color: colors.primaryDark,
+      fontSize: metrics.font.body,
+      fontWeight: '700',
+      textAlign: 'center',
+    },
+    similarItem: {
+      flexDirection: 'row',
+      alignItems: 'flex-start',
+      gap: metrics.spacing.sm,
+    },
+    similarCover: {
+      width: scale(56),
+      height: scale(84),
+      borderRadius: metrics.radius.sm,
+      backgroundColor: colors.hint,
+    },
+    similarInfo: {
+      flex: 1,
+      gap: metrics.spacing.xs,
+    },
+    similarTitle: {
+      color: colors.primaryDark,
+      fontSize: metrics.font.body,
+      fontWeight: '700',
+    },
+    similarAuthor: {
+      color: colors.accent,
+      fontSize: metrics.font.body,
+      fontWeight: '600',
+    },
+    similarReason: {
+      color: colors.muted,
+      fontSize: metrics.font.body,
+    },
+    similarChapters: {
+      color: colors.accent,
+      fontSize: metrics.font.body,
+      fontWeight: '600',
+    },
+    modalBackdrop: {
+      flex: 1,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: 'rgba(0, 0, 0, 0.45)',
+      padding: metrics.spacing.lg,
+    },
+    menu: {
+      width: '100%',
+      maxWidth: scale(340),
+      alignItems: 'center',
+      gap: metrics.spacing.md,
+      backgroundColor: colors.surface,
+      borderRadius: metrics.radius.lg,
+      padding: metrics.spacing.lg,
+    },
+    menuTitle: {
+      color: colors.primaryDark,
+      fontSize: metrics.font.heading,
+      fontWeight: '700',
+      textAlign: 'center',
+    },
+    menuSubtitle: {
+      color: colors.muted,
+      fontSize: metrics.font.body,
+      textAlign: 'center',
+    },
+    menuMeta: {
+      color: colors.accent,
+      fontSize: metrics.font.body,
+      fontWeight: '600',
+      textAlign: 'center',
+    },
+    modelMenu: {
+      maxHeight: '92%',
+    },
+    modelList: {
+      width: '100%',
+      maxHeight: scale(240),
+    },
+    keyFormList: {
+      width: '100%',
+      maxHeight: scale(620),
+    },
+    keyFormContent: {
+      alignItems: 'center',
+      gap: metrics.spacing.sm,
+    },
+    modelOption: {
+      width: '100%',
+      alignItems: 'flex-start',
+      borderWidth: scale(1),
+      borderColor: colors.border,
+      borderRadius: metrics.radius.sm,
+      paddingHorizontal: metrics.spacing.sm,
+      paddingVertical: metrics.spacing.xs,
+      gap: scale(2),
+    },
+    modelOptionLabel: {
+      color: colors.primaryDark,
+      fontSize: metrics.font.body,
+      fontWeight: '700',
+    },
+    modelOptionMeta: {
+      color: colors.muted,
+      fontSize: metrics.font.body,
+    },
+    providerLabel: {
+      color: colors.primary,
+      fontSize: metrics.font.body,
+      fontWeight: '700',
+      textAlign: 'center',
+    },
+    providerChips: {
+      width: '100%',
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      justifyContent: 'center',
+      gap: metrics.spacing.xs,
+    },
+    providerChip: {
+      borderWidth: scale(1),
+      borderColor: colors.border,
+      borderRadius: metrics.radius.pill,
+      paddingHorizontal: metrics.spacing.sm,
+      paddingVertical: metrics.spacing.xs,
+    },
+    providerChipSelected: {
+      backgroundColor: colors.primary,
+      borderColor: colors.primary,
+    },
+    providerChipText: {
+      color: colors.muted,
+      fontSize: metrics.font.body,
+      fontWeight: '600',
+    },
+    providerChipTextSelected: {
+      color: colors.surface,
+    },
+    keyStatus: {
+      color: colors.primary,
+      fontSize: metrics.font.body,
+      fontWeight: '600',
+      textAlign: 'center',
+    },
+    status: {
+      color: colors.primary,
+      fontSize: metrics.font.body,
+      fontWeight: '600',
+      textAlign: 'center',
+    },
+    link: {
+      color: colors.primary,
+      fontSize: metrics.font.body,
+      fontWeight: '600',
+      textAlign: 'center',
+      textDecorationLine: 'underline',
+    },
+    devLink: {
+      color: colors.muted,
+      fontSize: metrics.font.body,
+      textAlign: 'center',
+      textDecorationLine: 'underline',
+    },
+    themeRow: {
+      alignSelf: 'stretch',
+      gap: metrics.spacing.xs,
+    },
+    themeLabel: {
+      color: colors.muted,
+      fontSize: metrics.font.body,
+      fontWeight: '600',
+      textAlign: 'center',
+    },
+    themeOptions: {
+      flexDirection: 'row',
+      gap: metrics.spacing.xs,
+    },
+    themeChip: {
+      flex: 1,
+      alignItems: 'center',
+      paddingVertical: metrics.spacing.sm,
+      borderRadius: metrics.radius.sm,
+      borderWidth: scale(1),
+      borderColor: colors.border,
+      backgroundColor: colors.background,
+    },
+    themeChipSelected: {
+      backgroundColor: colors.primary,
+      borderColor: colors.primary,
+    },
+    themeChipText: {
+      color: colors.muted,
+      fontSize: metrics.font.body,
+      fontWeight: '600',
+    },
+    themeChipTextSelected: {
+      color: colors.surface,
+    },
+  });
+}
