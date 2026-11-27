@@ -61,6 +61,16 @@ import {
   subscribeToSystemScheme,
   type ColorScheme,
 } from '../services/theme';
+import {
+  DEFAULT_SUMMARY_STYLE,
+  SUMMARY_FONT_IDS,
+  SUMMARY_FONTS,
+  SUMMARY_FONT_SIZE_LIMITS,
+  loadSummaryStyle,
+  saveSummaryStyle,
+  type SummaryFontId,
+  type SummaryStyleSettings,
+} from '../services/summaryStyle';
 import { resolveColors, type Palette, type ThemeMode } from '../theme/colors';
 import { metrics, scale } from '../theme/metrics';
 
@@ -154,6 +164,10 @@ export default function BookSummaryScreen({
     DEFAULT_READ_ALOUD_SETTINGS,
   );
   const [voiceSettingsVisible, setVoiceSettingsVisible] = useState(false);
+  const [fontSettingsVisible, setFontSettingsVisible] = useState(false);
+  const [summaryStyle, setSummaryStyle] = useState<SummaryStyleSettings>(
+    DEFAULT_SUMMARY_STYLE,
+  );
   const [speakingChapter, setSpeakingChapter] = useState<number | null>(null);
   const [highlightedChapter, setHighlightedChapter] = useState<number | null>(
     null,
@@ -196,6 +210,14 @@ export default function BookSummaryScreen({
       })
       .catch(() => undefined);
 
+    void loadSummaryStyle()
+      .then((settings) => {
+        if (active) {
+          setSummaryStyle(settings);
+        }
+      })
+      .catch(() => undefined);
+
     const unsubscribe = subscribeToSystemScheme(setSystemScheme);
 
     return () => {
@@ -232,12 +254,29 @@ export default function BookSummaryScreen({
           return true;
         }
 
+        if (fontSettingsVisible) {
+          setFontSettingsVisible(false);
+          return true;
+        }
+
+        if (voiceSettingsVisible) {
+          setVoiceSettingsVisible(false);
+          return true;
+        }
+
         return false;
       },
     );
 
     return () => subscription.remove();
-  }, [modelPicker, addingKey, menuChapter, coverVisible]);
+  }, [
+    modelPicker,
+    addingKey,
+    menuChapter,
+    coverVisible,
+    fontSettingsVisible,
+    voiceSettingsVisible,
+  ]);
 
   const handleScroll = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
     const offset = event.nativeEvent.contentOffset.y;
@@ -664,6 +703,14 @@ export default function BookSummaryScreen({
     THEME_MODES[(THEME_MODES.indexOf(themeMode) + 1) % THEME_MODES.length];
   const colors = useMemo(() => resolveColors(activeScheme), [activeScheme]);
   const styles = useMemo(() => createStyles(colors), [colors]);
+  const summaryTextStyle = useMemo(
+    () => ({
+      fontFamily: SUMMARY_FONTS[summaryStyle.font].fontFamily,
+      fontSize: scale(summaryStyle.fontSize),
+      lineHeight: Math.round(scale(summaryStyle.fontSize) * 1.45),
+    }),
+    [summaryStyle.font, summaryStyle.fontSize],
+  );
 
   useEffect(() => {
     if (typeof document === 'undefined') {
@@ -718,6 +765,35 @@ export default function BookSummaryScreen({
     stopChapterReading();
     setVoiceSettings(DEFAULT_READ_ALOUD_SETTINGS);
     void saveReadAloudSettings(DEFAULT_READ_ALOUD_SETTINGS);
+  };
+
+  const selectSummaryFont = (font: SummaryFontId) => {
+    setSummaryStyle((current) => {
+      const next = { ...current, font };
+      void saveSummaryStyle(next);
+      return next;
+    });
+  };
+
+  const updateSummaryFontSize = (direction: -1 | 1) => {
+    setSummaryStyle((current) => {
+      const changed = current.fontSize + direction * SUMMARY_FONT_SIZE_LIMITS.step;
+      const next = {
+        ...current,
+        fontSize: Math.min(
+          SUMMARY_FONT_SIZE_LIMITS.max,
+          Math.max(SUMMARY_FONT_SIZE_LIMITS.min, changed),
+        ),
+      };
+
+      void saveSummaryStyle(next);
+      return next;
+    });
+  };
+
+  const resetSummaryStyle = () => {
+    setSummaryStyle(DEFAULT_SUMMARY_STYLE);
+    void saveSummaryStyle(DEFAULT_SUMMARY_STYLE);
   };
 
   const renderVoiceSettingRow = (
@@ -825,6 +901,15 @@ export default function BookSummaryScreen({
             </TouchableOpacity>
             <Text style={styles.eyebrow}>RESUMEN POR CAPÍTULOS</Text>
             <TouchableOpacity
+              style={styles.fontButton}
+              hitSlop={scale(8)}
+              onPress={() => setFontSettingsVisible(true)}
+              accessibilityRole="button"
+              accessibilityLabel="Configurar fuente del resumen"
+            >
+              <Text style={styles.fontButtonText}>Aa</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
               style={styles.themeButton}
               hitSlop={scale(8)}
               onPress={() => {
@@ -916,7 +1001,7 @@ export default function BookSummaryScreen({
                 {savedParagraphs[index].map((paragraph, paragraphIndex) => (
                   <Text
                     key={`${chapter.number}-${paragraphIndex}`}
-                    style={styles.chapterText}
+                    style={[styles.chapterText, summaryTextStyle]}
                   >
                     {paragraph}
                   </Text>
@@ -933,7 +1018,10 @@ export default function BookSummaryScreen({
               </Text>
               <View style={styles.chapterBody}>
                 {splitIntoParagraphs(draft.summary).map((paragraph, index) => (
-                  <Text key={index} style={styles.chapterText}>
+                  <Text
+                    key={index}
+                    style={[styles.chapterText, summaryTextStyle]}
+                  >
                     {paragraph}
                   </Text>
                 ))}
@@ -1133,6 +1221,9 @@ export default function BookSummaryScreen({
                           onPress={() => setNewProviderId(provider.id)}
                           accessibilityRole="button"
                           accessibilityState={{ selected }}
+                          accessibilityLabel={`${provider.shortLabel}${
+                            provider.preferred ? ', preferido' : ''
+                          }`}
                         >
                           <Text
                             style={[
@@ -1140,6 +1231,7 @@ export default function BookSummaryScreen({
                               selected ? styles.providerChipTextSelected : null,
                             ]}
                           >
+                            {provider.preferred ? '★ ' : ''}
                             {provider.shortLabel}
                           </Text>
                         </TouchableOpacity>
@@ -1181,6 +1273,7 @@ export default function BookSummaryScreen({
                         accessibilityState={{ selected: isActive }}
                       >
                         <Text style={styles.modelOptionLabel}>
+                          {provider.preferred ? '★ ' : ''}
                           {provider.label}
                           {isActive ? ' · Actual' : ''}
                         </Text>
@@ -1277,6 +1370,102 @@ export default function BookSummaryScreen({
             </TouchableOpacity>
             <TouchableOpacity
               onPress={() => setVoiceSettingsVisible(false)}
+              accessibilityRole="button"
+            >
+              <Text style={styles.link}>Cerrar</Text>
+            </TouchableOpacity>
+          </TouchableOpacity>
+        </TouchableOpacity>
+      </Modal>
+
+      <Modal
+        visible={fontSettingsVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setFontSettingsVisible(false)}
+      >
+        <TouchableOpacity
+          style={styles.modalBackdrop}
+          activeOpacity={1}
+          onPress={() => setFontSettingsVisible(false)}
+        >
+          <TouchableOpacity
+            style={[styles.menu, styles.voiceMenu]}
+            activeOpacity={1}
+          >
+            <Text style={styles.menuTitle}>Fuente del resumen</Text>
+            <Text style={styles.menuSubtitle}>
+              Elige la tipografía y el tamaño del texto de los capítulos.
+            </Text>
+
+            <Text style={styles.providerLabel}>Tipografía</Text>
+            <View style={styles.providerChips}>
+              {SUMMARY_FONT_IDS.map((id) => {
+                const selected = summaryStyle.font === id;
+
+                return (
+                  <TouchableOpacity
+                    key={id}
+                    style={[
+                      styles.providerChip,
+                      selected ? styles.providerChipSelected : null,
+                    ]}
+                    onPress={() => selectSummaryFont(id)}
+                    accessibilityRole="button"
+                    accessibilityState={{ selected }}
+                  >
+                    <Text
+                      style={[
+                        styles.providerChipText,
+                        selected ? styles.providerChipTextSelected : null,
+                      ]}
+                    >
+                      {SUMMARY_FONTS[id].label}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+
+            <View style={styles.voiceSettingRow}>
+              <Text style={styles.voiceSettingLabel}>Tamaño</Text>
+              <View style={styles.voiceStepper}>
+                <TouchableOpacity
+                  style={styles.stepButton}
+                  onPress={() => updateSummaryFontSize(-1)}
+                  accessibilityRole="button"
+                  accessibilityLabel="Reducir tamaño del resumen"
+                >
+                  <Text style={styles.stepText}>−</Text>
+                </TouchableOpacity>
+                <Text style={styles.voiceSettingValue}>
+                  {summaryStyle.fontSize} px
+                </Text>
+                <TouchableOpacity
+                  style={styles.stepButton}
+                  onPress={() => updateSummaryFontSize(1)}
+                  accessibilityRole="button"
+                  accessibilityLabel="Aumentar tamaño del resumen"
+                >
+                  <Text style={styles.stepText}>+</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+
+            <View style={styles.fontPreview}>
+              <Text style={[styles.fontPreviewText, summaryTextStyle]}>
+                La lectura es más cómoda cuando el texto se adapta a ti.
+              </Text>
+            </View>
+
+            <TouchableOpacity
+              onPress={resetSummaryStyle}
+              accessibilityRole="button"
+            >
+              <Text style={styles.devLink}>Restablecer valores</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={() => setFontSettingsVisible(false)}
               accessibilityRole="button"
             >
               <Text style={styles.link}>Cerrar</Text>
@@ -1511,6 +1700,17 @@ function createStyles(colors: Palette) {
       maxHeight: '92%',
       gap: metrics.spacing.sm,
     },
+    fontPreview: {
+      width: '100%',
+      borderWidth: scale(1),
+      borderColor: colors.border,
+      borderRadius: metrics.radius.sm,
+      backgroundColor: colors.background,
+      padding: metrics.spacing.sm,
+    },
+    fontPreviewText: {
+      color: colors.text,
+    },
     voiceToggle: {
       width: '100%',
       alignItems: 'center',
@@ -1696,6 +1896,25 @@ function createStyles(colors: Palette) {
       borderRadius: scale(2),
       backgroundColor: colors.danger,
       transform: [{ rotate: '-45deg' }],
+    },
+    fontButton: {
+      position: 'absolute',
+      right: scale(40),
+      width: scale(32),
+      height: scale(32),
+      alignItems: 'center',
+      justifyContent: 'center',
+      borderRadius: scale(16),
+      borderWidth: scale(1),
+      borderColor: colors.border,
+      backgroundColor: colors.background,
+    },
+    fontButtonText: {
+      color: colors.muted,
+      fontSize: scale(13),
+      fontWeight: '700',
+      lineHeight: scale(16),
+      textAlign: 'center',
     },
     themeButton: {
       position: 'absolute',

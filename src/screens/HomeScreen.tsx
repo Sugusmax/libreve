@@ -136,6 +136,9 @@ export default function HomeScreen({
                     onPress={() => void selectProvider(provider.id)}
                     accessibilityRole="button"
                     accessibilityState={{ selected }}
+                    accessibilityLabel={`${provider.shortLabel}${
+                      provider.preferred ? ', preferido' : ''
+                    }`}
                   >
                     <Text
                       style={[
@@ -143,6 +146,7 @@ export default function HomeScreen({
                         selected ? styles.providerChipTextSelected : null,
                       ]}
                     >
+                      {provider.preferred ? '★ ' : ''}
                       {provider.shortLabel}
                     </Text>
                   </TouchableOpacity>

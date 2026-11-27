@@ -19,6 +19,8 @@ export type AiProvider = {
   steps: string[];
   model: string;
   fallbackModels?: string[];
+  /** Marca el proveedor recomendado para este usuario. */
+  preferred?: boolean;
   // Solo para los proveedores compatibles con la API de OpenAI.
   endpoint?: string;
 };
@@ -82,6 +84,7 @@ export const providers: AiProvider[] = [
     label: 'Groq',
     shortLabel: 'Groq',
     kind: 'openai-compatible',
+    preferred: true,
     helpUrl: 'https://console.groq.com/keys',
     linkLabel: 'Abrir Groq Console',
     steps: [
