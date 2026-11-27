@@ -1273,10 +1273,7 @@ export default function BookSummaryScreen({
           activeOpacity={1}
           onPress={() => setSettingsVisible(false)}
         >
-          <TouchableOpacity
-            style={[styles.menu, styles.settingsMenu]}
-            activeOpacity={1}
-          >
+          <TouchableOpacity style={styles.menu} activeOpacity={1}>
             <ScrollView
               style={styles.settingsScroll}
               contentContainerStyle={styles.settingsContent}
@@ -1667,16 +1664,13 @@ function createStyles(colors: Palette) {
     modelMenu: {
       maxHeight: '92%',
     },
-    settingsMenu: {
-      maxHeight: '92%',
-    },
     settingsScroll: {
       width: '100%',
-      maxHeight: scale(560),
+      flexGrow: 0,
     },
     settingsContent: {
       alignItems: 'center',
-      gap: metrics.spacing.sm,
+      gap: metrics.spacing.xs,
     },
     settingsDivider: {
       width: '100%',
@@ -1851,7 +1845,8 @@ function createStyles(colors: Palette) {
     },
     settingsButton: {
       position: 'absolute',
-      top: scale(12),
+      // Alinea el botón con la línea «RESUMEN POR CAPÍTULOS» del encabezado.
+      top: metrics.spacing.xl + metrics.spacing.lg - scale(4),
       right: metrics.spacing.sm,
       width: scale(40),
       height: scale(40),
