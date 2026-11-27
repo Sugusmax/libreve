@@ -1686,7 +1686,7 @@ function createStyles(colors: Palette) {
     },
     readAloudSlash: {
       position: 'absolute',
-      width: scale(22),
+      width: scale(32),
       height: scale(3),
       borderRadius: scale(2),
       backgroundColor: colors.danger,
