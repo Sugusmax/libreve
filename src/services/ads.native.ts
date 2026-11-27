@@ -1,12 +1,10 @@
 import mobileAds, {
   AdEventType,
   InterstitialAd,
-  TestIds,
 } from 'react-native-google-mobile-ads';
 
-// IDs de prueba oficiales de Google. Sustituir por los IDs reales de AdMob
-// cuando la app tenga cuenta propia y el anuncio vaya a monetizar de verdad.
-const AD_UNIT_ID = TestIds.INTERSTITIAL;
+// ID real de la unidad intersticial de AdMob: se muestra al abrir cada libro.
+const AD_UNIT_ID = 'ca-app-pub-7798680358413450/3180488567';
 const LOAD_TIMEOUT_MS = 4000;
 const SHOW_TIMEOUT_MS = 30000;
 

@@ -2,7 +2,7 @@
   "expo": {
     "name": "Libreve",
     "slug": "libreve",
-    "version": "0.1.9",
+    "version": "0.2.0",
     "scheme": "libreve",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
@@ -33,7 +33,7 @@
     ]
   },
   "react-native-google-mobile-ads": {
-    "android_app_id": "ca-app-pub-3940256099942544~3347511713",
+    "android_app_id": "ca-app-pub-7798680358413450~5918332542",
     "ios_app_id": "ca-app-pub-3940256099942544~1458002511"
   }
 }
