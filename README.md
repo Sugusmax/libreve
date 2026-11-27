@@ -45,12 +45,13 @@ npm run web -- --port 8082
 
 ## Assets para Play Store
 
-Los assets se dibujan localmente, sin servicios externos:
+Los assets se generan localmente a partir de `assets/icon-source.png`, sin servicios externos:
 
 ```bash
 python3 scripts/generate_assets.py
 ```
 
+- `assets/icon-source.png`: imagen original del icono, conservada para poder regenerar el resto.
 - `assets/icon-master-1024.png`: icono principal de 1024×1024, referenciado en `app.json`.
 - `assets/play-store-icon-512.png`: icono de 512×512 para el listado de Play Store.
 - `assets/feature-graphic-1024x500.png`: imagen promocional de 1024×500.
