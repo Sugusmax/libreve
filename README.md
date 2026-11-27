@@ -42,3 +42,19 @@ Para probar en el navegador:
 ```bash
 npm run web -- --port 8082
 ```
+
+## Assets para Play Store
+
+Los assets se dibujan localmente, sin servicios externos:
+
+```bash
+python3 scripts/generate_assets.py
+```
+
+- `assets/icon-master-1024.png`: icono principal de 1024×1024, referenciado en `app.json`.
+- `assets/play-store-icon-512.png`: icono de 512×512 para el listado de Play Store.
+- `assets/feature-graphic-1024x500.png`: imagen promocional de 1024×500.
+- `assets/adaptive-icon-foreground-1080.png` y `assets/adaptive-icon-background-1080.png`: capas del icono adaptativo de Android.
+- `assets/favicon-192.png`: favicon de la versión web.
+
+Para subir la app a Play Store todavía hay que añadir las capturas reales desde el dispositivo y los textos del listado (descripción corta, descripción completa, categoría y política de privacidad).

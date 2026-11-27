@@ -6,21 +6,27 @@
     "scheme": "libreve",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
+    "icon": "./assets/icon-master-1024.png",
     "splash": {
-      "backgroundColor": "#ffffff",
+      "backgroundColor": "#F7F4EF",
       "resizeMode": "contain"
     },
     "assetBundlePatterns": [
       "**/*"
     ],
     "android": {
-      "package": "com.libreve.native"
+      "package": "com.libreve.native",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon-foreground-1080.png",
+        "backgroundImage": "./assets/adaptive-icon-background-1080.png"
+      }
     },
     "ios": {
       "supportsTablet": true
     },
     "web": {
-      "bundler": "metro"
+      "bundler": "metro",
+      "favicon": "./assets/favicon-192.png"
     },
     "plugins": [
       "expo-secure-store"
