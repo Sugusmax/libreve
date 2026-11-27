@@ -146,6 +146,50 @@ def make_feature(glyph: Image.Image) -> None:
     print("assets/feature-graphic-1024x500.png  1024x500")
 
 
+def sync_android_icons() -> None:
+    """Copia los iconos al proyecto Android nativo (no usa expo prebuild)."""
+    res = ROOT / "android" / "app" / "src" / "main" / "res"
+    if not res.exists():
+        return
+
+    icon = base_icon()
+    densities = {
+        "mdpi": 48,
+        "hdpi": 72,
+        "xhdpi": 96,
+        "xxhdpi": 144,
+        "xxxhdpi": 192,
+    }
+
+    for folder, size in densities.items():
+        target = res / f"mipmap-{folder}"
+        target.mkdir(parents=True, exist_ok=True)
+        resized = icon.resize((size, size), Image.Resampling.LANCZOS)
+        resized.save(target / "ic_launcher.png", "PNG", optimize=True)
+        resized.save(target / "ic_launcher_round.png", "PNG", optimize=True)
+
+    drawable = res / "drawable-xxxhdpi"
+    drawable.mkdir(parents=True, exist_ok=True)
+    foreground = Image.open(ASSETS / "adaptive-icon-foreground-1080.png").convert("RGBA")
+    background = Image.open(ASSETS / "adaptive-icon-background-1080.png").convert("RGB")
+    foreground.save(drawable / "ic_launcher_foreground.png", "PNG", optimize=True)
+    background.save(drawable / "ic_launcher_background.png", "PNG", optimize=True)
+
+    adaptive_dir = res / "mipmap-anydpi-v26"
+    adaptive_dir.mkdir(parents=True, exist_ok=True)
+    adaptive_xml = (
+        '<?xml version="1.0" encoding="utf-8"?>\n'
+        '<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">\n'
+        '    <background android:drawable="@drawable/ic_launcher_background" />\n'
+        '    <foreground android:drawable="@drawable/ic_launcher_foreground" />\n'
+        '</adaptive-icon>\n'
+    )
+    for name in ("ic_launcher.xml", "ic_launcher_round.xml"):
+        (adaptive_dir / name).write_text(adaptive_xml, encoding="utf-8")
+
+    print("android/app/src/main/res: iconos y capas adaptativas sincronizados")
+
+
 def main() -> None:
     ASSETS.mkdir(parents=True, exist_ok=True)
     if not SOURCE.exists():
@@ -155,6 +199,7 @@ def main() -> None:
     glyph = book_glyph()
     make_adaptive_icons(glyph)
     make_feature(glyph)
+    sync_android_icons()
 
 
 if __name__ == "__main__":
