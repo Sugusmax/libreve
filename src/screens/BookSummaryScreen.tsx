@@ -1,15 +1,19 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Animated,
   BackHandler,
   findNodeHandle,
   Image,
   Modal,
+  PanResponder,
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
+  type GestureResponderEvent,
+  type LayoutChangeEvent,
   type NativeScrollEvent,
   type NativeSyntheticEvent,
 } from 'react-native';
@@ -132,6 +136,88 @@ function splitIntoParagraphs(text: string): string[] {
   return paragraphs;
 }
 
+type NormalizedText = {
+  value: string;
+  // Posición en el texto original de cada carácter normalizado, para poder
+  // resaltar la coincidencia aunque el usuario escriba sin tildes.
+  positions: number[];
+};
+
+function normalizeForSearch(text: string): NormalizedText {
+  let value = '';
+  const positions: number[] = [];
+
+  for (let index = 0; index < text.length; index += 1) {
+    const plain = text[index]
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase();
+
+    for (const character of plain) {
+      value += character;
+      positions.push(index);
+    }
+  }
+
+  return { value, positions };
+}
+
+type SearchResult = {
+  chapterNumber: number;
+  chapterTitle: string;
+  snippet: string;
+  matchStart: number;
+  matchEnd: number;
+};
+
+function buildSearchResult(
+  chapterNumber: number,
+  chapterTitle: string,
+  paragraphs: string[],
+  query: string,
+): SearchResult | null {
+  let source = chapterTitle;
+  let normalized = normalizeForSearch(source);
+  let match = normalized.value.indexOf(query);
+
+  if (match < 0) {
+    for (const paragraph of paragraphs) {
+      const candidate = normalizeForSearch(paragraph);
+      const found = candidate.value.indexOf(query);
+
+      if (found >= 0) {
+        source = paragraph;
+        normalized = candidate;
+        match = found;
+        break;
+      }
+    }
+  }
+
+  if (match < 0) {
+    return null;
+  }
+
+  const lastNormalizedIndex = Math.min(
+    match + query.length - 1,
+    normalized.positions.length - 1,
+  );
+  const from = normalized.positions[match];
+  const to = normalized.positions[lastNormalizedIndex] + 1;
+  const start = Math.max(0, from - 45);
+  const end = Math.min(source.length, to + 90);
+  const prefix = start > 0 ? '…' : '';
+  const suffix = end < source.length ? '…' : '';
+
+  return {
+    chapterNumber,
+    chapterTitle,
+    snippet: `${prefix}${source.slice(start, end)}${suffix}`,
+    matchStart: prefix.length + from - start,
+    matchEnd: prefix.length + to - start,
+  };
+}
+
 export default function BookSummaryScreen({
   book,
   backLabel,
@@ -167,16 +253,30 @@ export default function BookSummaryScreen({
   const [highlightedChapter, setHighlightedChapter] = useState<number | null>(
     null,
   );
+  const [searchVisible, setSearchVisible] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [isDraggingRail, setIsDraggingRail] = useState(false);
+  const [activeChapter, setActiveChapter] = useState<number | null>(null);
+  const [railHeight, setRailHeight] = useState(0);
+  const [canUseRail, setCanUseRail] = useState(false);
   const highlightRef = useRef(new Animated.Value(0)).current;
+  const scrollProgress = useRef(new Animated.Value(0)).current;
   const started = useRef(false);
   const scrollRef = useRef<ScrollView>(null);
   const chapterRefs = useRef<Record<number, View | null>>({});
+  const chapterOffsetsRef = useRef<Record<number, number>>({});
+  const scrollMetricsRef = useRef({
+    contentHeight: 0,
+    viewportHeight: 0,
+    offset: 0,
+  });
   const shouldScrollRef = useRef(false);
   const pendingFocusRef = useRef<number | null>(null);
   const userScrolledRef = useRef(false);
   const similarRequestedRef = useRef(false);
   const lastOffsetRef = useRef(0);
   const speechTokenRef = useRef(0);
+  const railThumbHeight = scale(28);
 
   useEffect(() => {
     let active = true;
@@ -218,6 +318,12 @@ export default function BookSummaryScreen({
     const subscription = BackHandler.addEventListener(
       'hardwareBackPress',
       () => {
+        if (searchVisible) {
+          setSearchVisible(false);
+          setSearchQuery('');
+          return true;
+        }
+
         if (modelPicker) {
           if (addingKey) {
             setAddingKey(false);
@@ -249,12 +355,39 @@ export default function BookSummaryScreen({
 
     return () => subscription.remove();
   }, [
+    searchVisible,
     modelPicker,
     addingKey,
     menuChapter,
     coverVisible,
     settingsVisible,
   ]);
+
+  const refreshRailVisibility = () => {
+    const { contentHeight, viewportHeight } = scrollMetricsRef.current;
+    setCanUseRail(
+      chapters.length > 1 && contentHeight > viewportHeight + scale(16),
+    );
+  };
+
+  const updateScrollProgress = (offset = scrollMetricsRef.current.offset) => {
+    const { contentHeight, viewportHeight } = scrollMetricsRef.current;
+    const maxScroll = Math.max(1, contentHeight - viewportHeight);
+
+    scrollProgress.setValue(Math.min(1, Math.max(0, offset / maxScroll)));
+
+    let current: number | null = null;
+
+    for (const chapter of chapters) {
+      const chapterOffset = chapterOffsetsRef.current[chapter.number];
+
+      if (chapterOffset !== undefined && chapterOffset <= offset + scale(24)) {
+        current = chapter.number;
+      }
+    }
+
+    setActiveChapter((previous) => (previous === current ? previous : current));
+  };
 
   const handleScroll = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
     const offset = event.nativeEvent.contentOffset.y;
@@ -269,7 +402,61 @@ export default function BookSummaryScreen({
     }
 
     lastOffsetRef.current = offset;
+    scrollMetricsRef.current.offset = offset;
+    updateScrollProgress(offset);
   };
+
+  const handleContentSizeChange = (_width: number, height: number) => {
+    scrollMetricsRef.current.contentHeight = height;
+    updateScrollProgress();
+    refreshRailVisibility();
+  };
+
+  const handleScrollViewLayout = (event: LayoutChangeEvent) => {
+    scrollMetricsRef.current.viewportHeight = event.nativeEvent.layout.height;
+    updateScrollProgress();
+    refreshRailVisibility();
+  };
+
+  const scrollToRatio = useCallback((ratio: number) => {
+    const { contentHeight, viewportHeight } = scrollMetricsRef.current;
+    const maxScroll = Math.max(0, contentHeight - viewportHeight);
+
+    scrollRef.current?.scrollTo({
+      y: Math.min(1, Math.max(0, ratio)) * maxScroll,
+      animated: false,
+    });
+  }, []);
+
+  const handleRailTouch = useCallback(
+    (event: GestureResponderEvent) => {
+      if (!canUseRail || railHeight <= 0) {
+        return;
+      }
+
+      userScrolledRef.current = true;
+      const usableHeight = Math.max(1, railHeight - railThumbHeight);
+      const y = event.nativeEvent.locationY - railThumbHeight / 2;
+      scrollToRatio(y / usableHeight);
+    },
+    [canUseRail, railHeight, railThumbHeight, scrollToRatio],
+  );
+
+  const railPanResponder = useMemo(
+    () =>
+      PanResponder.create({
+        onStartShouldSetPanResponder: () => canUseRail,
+        onMoveShouldSetPanResponder: () => canUseRail,
+        onPanResponderGrant: (event) => {
+          setIsDraggingRail(true);
+          handleRailTouch(event);
+        },
+        onPanResponderMove: (event) => handleRailTouch(event),
+        onPanResponderRelease: () => setIsDraggingRail(false),
+        onPanResponderTerminate: () => setIsDraggingRail(false),
+      }),
+    [canUseRail, handleRailTouch],
+  );
 
   const loadSimilar = async () => {
     if (similarRequestedRef.current) {
@@ -573,8 +760,9 @@ export default function BookSummaryScreen({
         const saved = await loadChapters(book);
 
         if (saved.length > 0) {
+          // Al reabrir el libro empezamos desde el principio: el desplazamiento
+          // automático queda reservado al capítulo recién generado.
           setChapters(saved);
-          shouldScrollRef.current = true;
           setIsRestoring(false);
           void recordBookRead(book).catch(() => {
             // El contador es orientativo: no bloqueamos la lectura si falla.
@@ -595,32 +783,33 @@ export default function BookSummaryScreen({
     })();
   }, []);
 
-  const focusRegeneratedChapter = (number: number) => {
-    highlightRef.stopAnimation();
-    highlightRef.setValue(0);
-    setHighlightedChapter(number);
+  const focusChapter = (number: number, withHighlight = true) => {
+    if (withHighlight) {
+      highlightRef.stopAnimation();
+      highlightRef.setValue(0);
+      setHighlightedChapter(number);
 
-    // Dos pulsos suaves sobre el capítulo reemplazado para que se note dónde
-    // está la versión nueva.
-    Animated.loop(
-      Animated.sequence([
-        Animated.timing(highlightRef, {
-          toValue: 1,
-          duration: 320,
-          useNativeDriver: false,
-        }),
-        Animated.timing(highlightRef, {
-          toValue: 0,
-          duration: 620,
-          useNativeDriver: false,
-        }),
-      ]),
-      { iterations: 2 },
-    ).start(({ finished }) => {
-      if (finished) {
-        setHighlightedChapter(null);
-      }
-    });
+      // Dos pulsos suaves para que se note qué capítulo se acaba de enfocar.
+      Animated.loop(
+        Animated.sequence([
+          Animated.timing(highlightRef, {
+            toValue: 1,
+            duration: 320,
+            useNativeDriver: false,
+          }),
+          Animated.timing(highlightRef, {
+            toValue: 0,
+            duration: 620,
+            useNativeDriver: false,
+          }),
+        ]),
+        { iterations: 2 },
+      ).start(({ finished }) => {
+        if (finished) {
+          setHighlightedChapter(null);
+        }
+      });
+    }
 
     const target = chapterRefs.current[number];
     const scroller = scrollRef.current;
@@ -630,7 +819,11 @@ export default function BookSummaryScreen({
       target.measureLayout(
         scrollerNode,
         (_x, y) => {
-          scroller.scrollTo({ y: Math.max(0, y - scale(24)), animated: true });
+          const absoluteY = scrollMetricsRef.current.offset + y;
+          scroller.scrollTo({
+            y: Math.max(0, absoluteY - scale(24)),
+            animated: true,
+          });
         },
         () => {},
       );
@@ -642,7 +835,7 @@ export default function BookSummaryScreen({
 
     if (focusNumber !== null) {
       pendingFocusRef.current = null;
-      requestAnimationFrame(() => focusRegeneratedChapter(focusNumber));
+      requestAnimationFrame(() => focusChapter(focusNumber));
       return;
     }
 
@@ -667,6 +860,27 @@ export default function BookSummaryScreen({
     () => chapters.map((chapter) => splitIntoParagraphs(chapter.summary)),
     [chapters],
   );
+  const normalizedQuery = useMemo(
+    () => normalizeForSearch(searchQuery.trim()).value,
+    [searchQuery],
+  );
+  const searchResults = useMemo(() => {
+    if (!normalizedQuery) {
+      return [];
+    }
+
+    return chapters
+      .map((chapter, index) =>
+        buildSearchResult(
+          chapter.number,
+          chapter.title,
+          savedParagraphs[index] ?? [],
+          normalizedQuery,
+        ),
+      )
+      .filter((result): result is SearchResult => result !== null)
+      .slice(0, 50);
+  }, [chapters, savedParagraphs, normalizedQuery]);
   const showWorking = isRestoring || isLoading;
   const largeCover =
     book.coverLargeUrl ?? upgradeCoverUrl(book.coverUrl) ?? book.coverUrl;
@@ -679,6 +893,36 @@ export default function BookSummaryScreen({
     }),
     [summaryStyle.font, summaryStyle.fontSize],
   );
+
+  // Guardamos la posición real de cada capítulo para que el rail indique el
+  // capítulo activo aunque los capítulos tengan extensiones distintas.
+  useEffect(() => {
+    const frame = requestAnimationFrame(() => {
+      const scroller = scrollRef.current;
+      const scrollerNode = scroller ? findNodeHandle(scroller) : null;
+
+      if (scrollerNode === null) {
+        return;
+      }
+
+      const currentOffset = scrollMetricsRef.current.offset;
+
+      chapters.forEach((chapter) => {
+        chapterRefs.current[chapter.number]?.measureLayout(
+          scrollerNode,
+          (_x, y) => {
+            chapterOffsetsRef.current[chapter.number] = currentOffset + y;
+          },
+          () => {},
+        );
+      });
+
+      updateScrollProgress();
+      refreshRailVisibility();
+    });
+
+    return () => cancelAnimationFrame(frame);
+  }, [chapters, summaryTextStyle, styles]);
 
   const stopChapterReading = () => {
     speechTokenRef.current += 1;
@@ -823,6 +1067,20 @@ export default function BookSummaryScreen({
     borderWidth: scale(1),
   };
 
+  const renderHighlightedSnippet = (result: SearchResult) => {
+    const before = result.snippet.slice(0, result.matchStart);
+    const match = result.snippet.slice(result.matchStart, result.matchEnd);
+    const after = result.snippet.slice(result.matchEnd);
+
+    return (
+      <Text style={styles.searchSnippet}>
+        {before}
+        <Text style={styles.searchMatch}>{match}</Text>
+        {after}
+      </Text>
+    );
+  };
+
   return (
     <View style={styles.container}>
       <ScrollView
@@ -830,6 +1088,8 @@ export default function BookSummaryScreen({
         style={styles.scrollView}
         contentContainerStyle={styles.content}
         onScroll={handleScroll}
+        onContentSizeChange={handleContentSizeChange}
+        onLayout={handleScrollViewLayout}
         scrollEventThrottle={16}
       >
         <View style={styles.card}>
@@ -1011,6 +1271,74 @@ export default function BookSummaryScreen({
           ) : null}
         </View>
       </ScrollView>
+
+      {canUseRail ? (
+        <View
+          style={styles.rail}
+          onLayout={(event) => setRailHeight(event.nativeEvent.layout.height)}
+          accessibilityRole="adjustable"
+          accessibilityLabel="Navegar por los capítulos del resumen"
+          {...railPanResponder.panHandlers}
+        >
+          <View style={styles.railTrack} />
+          {chapters.map((chapter, index) => {
+            const maxScroll = Math.max(
+              1,
+              scrollMetricsRef.current.contentHeight -
+                scrollMetricsRef.current.viewportHeight,
+            );
+            const fallback =
+              (index / Math.max(1, chapters.length - 1)) * maxScroll;
+            const offset =
+              chapterOffsetsRef.current[chapter.number] ?? fallback;
+            const top =
+              (Math.min(1, Math.max(0, offset / maxScroll)) *
+                Math.max(0, railHeight - railThumbHeight));
+
+            return (
+              <View key={chapter.number} style={[styles.railTick, { top }]} />
+            );
+          })}
+          <Animated.View
+            style={[
+              styles.railThumb,
+              {
+                transform: [
+                  {
+                    translateY: scrollProgress.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [
+                        0,
+                        Math.max(0, railHeight - railThumbHeight),
+                      ],
+                    }),
+                  },
+                ],
+              },
+            ]}
+          >
+            {isDraggingRail && activeChapter !== null ? (
+              <View style={styles.railTooltip}>
+                <Text style={styles.railTooltipText}>
+                  Cap. {activeChapter}
+                </Text>
+              </View>
+            ) : null}
+          </Animated.View>
+        </View>
+      ) : null}
+
+      {chapters.length > 0 ? (
+        <TouchableOpacity
+          style={[styles.settingsButton, styles.searchButton]}
+          hitSlop={scale(8)}
+          onPress={() => setSearchVisible(true)}
+          accessibilityRole="button"
+          accessibilityLabel="Buscar dentro del resumen"
+        >
+          <Text style={styles.settingsButtonIcon}>🔍</Text>
+        </TouchableOpacity>
+      ) : null}
 
       <TouchableOpacity
         style={styles.settingsButton}
@@ -1218,6 +1546,82 @@ export default function BookSummaryScreen({
               accessibilityRole="button"
             >
               <Text style={styles.link}>Cancelar</Text>
+            </TouchableOpacity>
+          </TouchableOpacity>
+        </TouchableOpacity>
+      </Modal>
+
+      <Modal
+        visible={searchVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => {
+          setSearchVisible(false);
+          setSearchQuery('');
+        }}
+      >
+        <TouchableOpacity
+          style={styles.modalBackdrop}
+          activeOpacity={1}
+          onPress={() => {
+            setSearchVisible(false);
+            setSearchQuery('');
+          }}
+        >
+          <TouchableOpacity style={[styles.menu, styles.searchMenu]} activeOpacity={1}>
+            <Text style={styles.menuTitle}>Buscar en el resumen</Text>
+            <TextInput
+              style={styles.searchInput}
+              value={searchQuery}
+              onChangeText={setSearchQuery}
+              placeholder="Palabra o frase"
+              placeholderTextColor={colors.muted}
+              autoCorrect={false}
+              returnKeyType="search"
+              accessibilityLabel="Texto a buscar en el resumen"
+            />
+            <ScrollView
+              style={styles.searchResults}
+              contentContainerStyle={styles.searchResultsContent}
+              keyboardShouldPersistTaps="handled"
+            >
+              {!normalizedQuery ? (
+                <Text style={styles.searchEmpty}>
+                  Escribe un texto para buscar en los capítulos guardados.
+                </Text>
+              ) : searchResults.length === 0 ? (
+                <Text style={styles.searchEmpty}>
+                  No hay coincidencias en este resumen.
+                </Text>
+              ) : (
+                searchResults.map((result, index) => (
+                  <TouchableOpacity
+                    key={`${result.chapterNumber}-${index}`}
+                    style={styles.searchResult}
+                    onPress={() => {
+                      setSearchVisible(false);
+                      setSearchQuery('');
+                      focusChapter(result.chapterNumber);
+                    }}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Ir al capítulo ${result.chapterNumber}`}
+                  >
+                    <Text style={styles.searchResultTitle}>
+                      Capítulo {result.chapterNumber} · {result.chapterTitle}
+                    </Text>
+                    {renderHighlightedSnippet(result)}
+                  </TouchableOpacity>
+                ))
+              )}
+            </ScrollView>
+            <TouchableOpacity
+              onPress={() => {
+                setSearchVisible(false);
+                setSearchQuery('');
+              }}
+              accessibilityRole="button"
+            >
+              <Text style={styles.link}>Cerrar</Text>
             </TouchableOpacity>
           </TouchableOpacity>
         </TouchableOpacity>
@@ -1825,6 +2229,110 @@ function createStyles(colors: Palette) {
       fontSize: scale(20),
       lineHeight: scale(22),
       textAlign: 'center',
+    },
+    searchButton: {
+      right: metrics.spacing.sm + scale(48),
+    },
+    rail: {
+      position: 'absolute',
+      right: scale(2),
+      top: scale(140),
+      bottom: scale(72),
+      width: scale(24),
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    railTrack: {
+      width: scale(3),
+      height: '100%',
+      borderRadius: scale(2),
+      backgroundColor: colors.border,
+    },
+    railTick: {
+      position: 'absolute',
+      right: 0,
+      width: scale(8),
+      height: scale(1),
+      backgroundColor: colors.muted,
+      opacity: 0.55,
+    },
+    railThumb: {
+      position: 'absolute',
+      right: scale(1),
+      width: scale(18),
+      height: scale(28),
+      borderRadius: scale(9),
+      borderWidth: scale(2),
+      borderColor: colors.surface,
+      backgroundColor: colors.primary,
+      shadowColor: colors.primaryDark,
+      shadowOpacity: 0.25,
+      shadowRadius: scale(4),
+      elevation: 3,
+    },
+    railTooltip: {
+      position: 'absolute',
+      right: scale(22),
+      top: -scale(4),
+      paddingHorizontal: scale(8),
+      paddingVertical: scale(4),
+      borderRadius: scale(8),
+      backgroundColor: colors.primary,
+    },
+    railTooltipText: {
+      color: colors.background,
+      fontSize: scale(11),
+      fontWeight: '700',
+    },
+    searchMenu: {
+      maxHeight: '92%',
+    },
+    searchInput: {
+      width: '100%',
+      borderWidth: scale(1),
+      borderColor: colors.border,
+      borderRadius: metrics.radius.sm,
+      backgroundColor: colors.background,
+      color: colors.text,
+      paddingHorizontal: metrics.spacing.md,
+      paddingVertical: metrics.spacing.sm,
+      fontSize: scale(16),
+    },
+    searchResults: {
+      width: '100%',
+      maxHeight: scale(320),
+    },
+    searchResultsContent: {
+      gap: metrics.spacing.sm,
+      paddingVertical: metrics.spacing.xs,
+    },
+    searchResult: {
+      width: '100%',
+      padding: metrics.spacing.sm,
+      borderRadius: metrics.radius.sm,
+      backgroundColor: colors.hint,
+      gap: scale(4),
+    },
+    searchResultTitle: {
+      color: colors.primaryDark,
+      fontSize: scale(13),
+      fontWeight: '700',
+    },
+    searchSnippet: {
+      color: colors.text,
+      fontSize: scale(13),
+      lineHeight: scale(18),
+    },
+    searchMatch: {
+      color: colors.primary,
+      fontWeight: '700',
+      backgroundColor: colors.accent,
+    },
+    searchEmpty: {
+      color: colors.muted,
+      fontSize: metrics.font.body,
+      textAlign: 'center',
+      paddingVertical: metrics.spacing.lg,
     },
   });
 }
