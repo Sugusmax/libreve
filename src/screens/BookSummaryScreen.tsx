@@ -5,7 +5,6 @@ import {
   findNodeHandle,
   Image,
   Modal,
-  Platform,
   ScrollView,
   StyleSheet,
   Text,
@@ -1247,11 +1246,6 @@ export default function BookSummaryScreen({
               'Tono',
               `${voiceSettings.pitch.toFixed(1)}×`,
             )}
-            <Text style={styles.voiceHint}>
-              {Platform.OS === 'web'
-                ? 'En la web se usan las pausas naturales del navegador; velocidad y tono sí se aplican.'
-                : 'Las pausas se miden en milisegundos (1000 ms = 1 s).'}
-            </Text>
             {renderVoiceSettingRow(
               'commaPauseMs',
               'Pausa coma (ms)',
@@ -1521,11 +1515,6 @@ function createStyles(colors: Palette) {
     },
     voiceToggleTextOn: {
       color: colors.surface,
-    },
-    voiceHint: {
-      color: colors.muted,
-      fontSize: metrics.font.body,
-      textAlign: 'center',
     },
     voiceSettingRow: {
       width: '100%',
