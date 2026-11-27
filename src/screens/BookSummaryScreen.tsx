@@ -74,6 +74,13 @@ type ModelPicker = {
   active: ProviderId;
 };
 
+const THEME_MODES: ThemeMode[] = ['light', 'dark', 'auto'];
+const THEME_META: Record<ThemeMode, { icon: string; label: string }> = {
+  light: { icon: '☀', label: 'Claro' },
+  dark: { icon: '☾', label: 'Oscuro' },
+  auto: { icon: '◐', label: 'Auto' },
+};
+
 function splitIntoParagraphs(text: string): string[] {
   const normalized = text
     .replace(/\r\n?/g, '\n')
@@ -617,6 +624,8 @@ export default function BookSummaryScreen({
     book.coverLargeUrl ?? upgradeCoverUrl(book.coverUrl) ?? book.coverUrl;
   const activeScheme: ColorScheme =
     themeMode === 'auto' ? systemScheme : themeMode;
+  const nextThemeMode =
+    THEME_MODES[(THEME_MODES.indexOf(themeMode) + 1) % THEME_MODES.length];
   const colors = useMemo(() => resolveColors(activeScheme), [activeScheme]);
   const styles = useMemo(() => createStyles(colors), [colors]);
   const chapterHighlightStyle = {
@@ -641,47 +650,21 @@ export default function BookSummaryScreen({
         scrollEventThrottle={16}
       >
         <View style={styles.card}>
-          <Text style={styles.eyebrow}>RESUMEN POR CAPÍTULOS</Text>
-
-          <View style={styles.themeRow}>
-            <Text style={styles.themeLabel}>Tema de lectura</Text>
-            <View style={styles.themeOptions}>
-              {(
-                [
-                  ['light', 'Claro'],
-                  ['dark', 'Oscuro'],
-                  ['auto', 'Auto'],
-                ] as const
-              ).map(([mode, label]) => {
-                const selected = mode === themeMode;
-
-                return (
-                  <TouchableOpacity
-                    key={mode}
-                    style={[
-                      styles.themeChip,
-                      selected ? styles.themeChipSelected : null,
-                    ]}
-                    onPress={() => {
-                      setThemeMode(mode);
-                      void saveTheme(mode);
-                    }}
-                    accessibilityRole="button"
-                    accessibilityState={{ selected }}
-                    accessibilityLabel={`Tema ${label}`}
-                  >
-                    <Text
-                      style={[
-                        styles.themeChipText,
-                        selected ? styles.themeChipTextSelected : null,
-                      ]}
-                    >
-                      {label}
-                    </Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
+          <View style={styles.cardHeader}>
+            <Text style={styles.eyebrow}>RESUMEN POR CAPÍTULOS</Text>
+            <TouchableOpacity
+              style={styles.themeButton}
+              hitSlop={scale(8)}
+              onPress={() => {
+                setThemeMode(nextThemeMode);
+                void saveTheme(nextThemeMode);
+              }}
+              accessibilityRole="button"
+              accessibilityLabel={`Tema ${THEME_META[themeMode].label}`}
+              accessibilityHint={`Pulsa para cambiar a ${THEME_META[nextThemeMode].label}`}
+            >
+              <Text style={styles.themeIcon}>{THEME_META[themeMode].icon}</Text>
+            </TouchableOpacity>
           </View>
 
           <View style={styles.bookHeader}>
@@ -1319,40 +1302,29 @@ function createStyles(colors: Palette) {
       textAlign: 'center',
       textDecorationLine: 'underline',
     },
-    themeRow: {
-      alignSelf: 'stretch',
-      gap: metrics.spacing.xs,
-    },
-    themeLabel: {
-      color: colors.muted,
-      fontSize: metrics.font.body,
-      fontWeight: '600',
-      textAlign: 'center',
-    },
-    themeOptions: {
-      flexDirection: 'row',
-      gap: metrics.spacing.xs,
-    },
-    themeChip: {
-      flex: 1,
+    cardHeader: {
+      width: '100%',
       alignItems: 'center',
-      paddingVertical: metrics.spacing.sm,
-      borderRadius: metrics.radius.sm,
+      justifyContent: 'center',
+      minHeight: scale(32),
+    },
+    themeButton: {
+      position: 'absolute',
+      right: 0,
+      width: scale(32),
+      height: scale(32),
+      alignItems: 'center',
+      justifyContent: 'center',
+      borderRadius: scale(16),
       borderWidth: scale(1),
       borderColor: colors.border,
       backgroundColor: colors.background,
     },
-    themeChipSelected: {
-      backgroundColor: colors.primary,
-      borderColor: colors.primary,
-    },
-    themeChipText: {
+    themeIcon: {
       color: colors.muted,
-      fontSize: metrics.font.body,
-      fontWeight: '600',
-    },
-    themeChipTextSelected: {
-      color: colors.surface,
+      fontSize: scale(16),
+      lineHeight: scale(18),
+      textAlign: 'center',
     },
   });
 }
