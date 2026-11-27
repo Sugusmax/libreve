@@ -103,6 +103,10 @@ const THEME_META: Record<ThemeMode, { icon: string; label: string }> = {
 // veces en segundo plano y dejamos de insistir para no gastar peticiones.
 const SIMILAR_MAX_ATTEMPTS = 3;
 
+// Evita una lista interminable en resúmenes muy largos; las coincidencias se
+// recorren con Anterior/Siguiente desde la primera.
+const SEARCH_RESULT_LIMIT = 80;
+
 function splitIntoParagraphs(text: string): string[] {
   const normalized = text
     .replace(/\r\n?/g, '\n')
@@ -163,59 +167,65 @@ function normalizeForSearch(text: string): NormalizedText {
 }
 
 type SearchResult = {
+  id: string;
   chapterNumber: number;
   chapterTitle: string;
+  // -1 indica que la coincidencia está en el título del capítulo.
+  paragraphIndex: number;
   snippet: string;
   matchStart: number;
   matchEnd: number;
 };
 
-function buildSearchResult(
+function buildSearchResults(
   chapterNumber: number,
   chapterTitle: string,
   paragraphs: string[],
   query: string,
-): SearchResult | null {
-  let source = chapterTitle;
-  let normalized = normalizeForSearch(source);
-  let match = normalized.value.indexOf(query);
+): SearchResult[] {
+  const results: SearchResult[] = [];
+  const sources = [
+    { paragraphIndex: -1, text: chapterTitle },
+    ...paragraphs.map((text, index) => ({ paragraphIndex: index, text })),
+  ];
 
-  if (match < 0) {
-    for (const paragraph of paragraphs) {
-      const candidate = normalizeForSearch(paragraph);
-      const found = candidate.value.indexOf(query);
+  for (const source of sources) {
+    const normalized = normalizeForSearch(source.text);
+    let cursor = 0;
 
-      if (found >= 0) {
-        source = paragraph;
-        normalized = candidate;
-        match = found;
+    while (cursor + query.length <= normalized.value.length) {
+      const match = normalized.value.indexOf(query, cursor);
+
+      if (match < 0) {
         break;
       }
+
+      const lastNormalizedIndex = Math.min(
+        match + query.length - 1,
+        normalized.positions.length - 1,
+      );
+      const from = normalized.positions[match];
+      const to = normalized.positions[lastNormalizedIndex] + 1;
+      const start = Math.max(0, from - 45);
+      const end = Math.min(source.text.length, to + 90);
+      const prefix = start > 0 ? '…' : '';
+      const suffix = end < source.text.length ? '…' : '';
+
+      results.push({
+        id: `${chapterNumber}-${source.paragraphIndex}-${match}`,
+        chapterNumber,
+        chapterTitle,
+        paragraphIndex: source.paragraphIndex,
+        snippet: `${prefix}${source.text.slice(start, end)}${suffix}`,
+        matchStart: prefix.length + from - start,
+        matchEnd: prefix.length + to - start,
+      });
+
+      cursor = match + Math.max(1, query.length);
     }
   }
 
-  if (match < 0) {
-    return null;
-  }
-
-  const lastNormalizedIndex = Math.min(
-    match + query.length - 1,
-    normalized.positions.length - 1,
-  );
-  const from = normalized.positions[match];
-  const to = normalized.positions[lastNormalizedIndex] + 1;
-  const start = Math.max(0, from - 45);
-  const end = Math.min(source.length, to + 90);
-  const prefix = start > 0 ? '…' : '';
-  const suffix = end < source.length ? '…' : '';
-
-  return {
-    chapterNumber,
-    chapterTitle,
-    snippet: `${prefix}${source.slice(start, end)}${suffix}`,
-    matchStart: prefix.length + from - start,
-    matchEnd: prefix.length + to - start,
-  };
+  return results;
 }
 
 export default function BookSummaryScreen({
@@ -255,15 +265,25 @@ export default function BookSummaryScreen({
   );
   const [searchVisible, setSearchVisible] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [activeResultIndex, setActiveResultIndex] = useState(0);
+  const [highlightedParagraph, setHighlightedParagraph] = useState<
+    string | null
+  >(null);
   const [isDraggingRail, setIsDraggingRail] = useState(false);
   const [activeChapter, setActiveChapter] = useState<number | null>(null);
   const [railHeight, setRailHeight] = useState(0);
   const [canUseRail, setCanUseRail] = useState(false);
   const highlightRef = useRef(new Animated.Value(0)).current;
+  const paragraphHighlightRef = useRef(new Animated.Value(0)).current;
+  const paragraphHighlightToken = useRef(0);
   const scrollProgress = useRef(new Animated.Value(0)).current;
   const started = useRef(false);
   const scrollRef = useRef<ScrollView>(null);
+  const searchListRef = useRef<ScrollView>(null);
+  const searchListOffsetRef = useRef(0);
+  const searchResultRefs = useRef<Record<number, View | null>>({});
   const chapterRefs = useRef<Record<number, View | null>>({});
+  const paragraphRefs = useRef<Record<string, View | null>>({});
   const chapterOffsetsRef = useRef<Record<number, number>>({});
   const scrollMetricsRef = useRef({
     contentHeight: 0,
@@ -312,6 +332,12 @@ export default function BookSummaryScreen({
     };
   }, []);
 
+  const closeSearch = () => {
+    setSearchVisible(false);
+    setSearchQuery('');
+    setActiveResultIndex(0);
+  };
+
   // El botón/gesto «atrás» cierra primero el diálogo abierto; si no hay
   // ninguno, el evento llega a App.tsx y vuelve a la pantalla anterior.
   useEffect(() => {
@@ -319,8 +345,7 @@ export default function BookSummaryScreen({
       'hardwareBackPress',
       () => {
         if (searchVisible) {
-          setSearchVisible(false);
-          setSearchQuery('');
+          closeSearch();
           return true;
         }
 
@@ -869,18 +894,57 @@ export default function BookSummaryScreen({
       return [];
     }
 
-    return chapters
-      .map((chapter, index) =>
-        buildSearchResult(
-          chapter.number,
-          chapter.title,
-          savedParagraphs[index] ?? [],
-          normalizedQuery,
-        ),
-      )
-      .filter((result): result is SearchResult => result !== null)
-      .slice(0, 50);
+    const results: SearchResult[] = [];
+
+    for (const [index, chapter] of chapters.entries()) {
+      for (const result of buildSearchResults(
+        chapter.number,
+        chapter.title,
+        savedParagraphs[index] ?? [],
+        normalizedQuery,
+      )) {
+        results.push(result);
+
+        if (results.length >= SEARCH_RESULT_LIMIT) {
+          return results;
+        }
+      }
+    }
+
+    return results;
   }, [chapters, savedParagraphs, normalizedQuery]);
+
+  useEffect(() => {
+    if (!searchVisible || searchResults.length === 0) {
+      return;
+    }
+
+    const frame = requestAnimationFrame(() => {
+      const list = searchListRef.current;
+      const node = list ? findNodeHandle(list) : null;
+      const target = searchResultRefs.current[
+        Math.min(activeResultIndex, searchResults.length - 1)
+      ];
+
+      if (!list || !target || node === null) {
+        return;
+      }
+
+      target.measureLayout(
+        node,
+        (_x, y) => {
+          list.scrollTo({
+            y: Math.max(0, searchListOffsetRef.current + y - scale(24)),
+            animated: true,
+          });
+        },
+        () => {},
+      );
+    });
+
+    return () => cancelAnimationFrame(frame);
+  }, [activeResultIndex, searchResults, searchVisible]);
+
   const showWorking = isRestoring || isLoading;
   const largeCover =
     book.coverLargeUrl ?? upgradeCoverUrl(book.coverUrl) ?? book.coverUrl;
@@ -1066,6 +1130,74 @@ export default function BookSummaryScreen({
     }),
     borderWidth: scale(1),
   };
+  const paragraphHighlightStyle = {
+    backgroundColor: paragraphHighlightRef.interpolate({
+      inputRange: [0, 1],
+      outputRange: [colors.hint, colors.accent],
+    }),
+    borderRadius: scale(8),
+  };
+
+  const flashParagraph = (key: string) => {
+    paragraphHighlightToken.current += 1;
+    const token = paragraphHighlightToken.current;
+
+    paragraphHighlightRef.stopAnimation();
+    paragraphHighlightRef.setValue(0);
+    setHighlightedParagraph(key);
+
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(paragraphHighlightRef, {
+          toValue: 1,
+          duration: 320,
+          useNativeDriver: false,
+        }),
+        Animated.timing(paragraphHighlightRef, {
+          toValue: 0,
+          duration: 620,
+          useNativeDriver: false,
+        }),
+      ]),
+      { iterations: 2 },
+    ).start(({ finished }) => {
+      if (finished && token === paragraphHighlightToken.current) {
+        setHighlightedParagraph(null);
+      }
+    });
+  };
+
+  const focusSearchResult = (result: SearchResult, index: number) => {
+    closeSearch();
+    setActiveResultIndex(index);
+
+    if (result.paragraphIndex < 0) {
+      focusChapter(result.chapterNumber);
+      return;
+    }
+
+    const key = `${result.chapterNumber}-${result.paragraphIndex}`;
+    const target = paragraphRefs.current[key];
+    const scroller = scrollRef.current;
+    const scrollerNode = scroller ? findNodeHandle(scroller) : null;
+
+    if (!target || !scroller || scrollerNode === null) {
+      return;
+    }
+
+    flashParagraph(key);
+    target.measureLayout(
+      scrollerNode,
+      (_x, y) => {
+        const absoluteY = scrollMetricsRef.current.offset + y;
+        scroller.scrollTo({
+          y: Math.max(0, absoluteY - scale(80)),
+          animated: true,
+        });
+      },
+      () => {},
+    );
+  };
 
   const renderHighlightedSnippet = (result: SearchResult) => {
     const before = result.snippet.slice(0, result.matchStart);
@@ -1081,6 +1213,11 @@ export default function BookSummaryScreen({
     );
   };
 
+  const safeResultIndex = Math.min(
+    activeResultIndex,
+    Math.max(0, searchResults.length - 1),
+  );
+
   return (
     <View style={styles.container}>
       <ScrollView
@@ -1091,6 +1228,8 @@ export default function BookSummaryScreen({
         onContentSizeChange={handleContentSizeChange}
         onLayout={handleScrollViewLayout}
         scrollEventThrottle={16}
+        showsVerticalScrollIndicator={false}
+        showsHorizontalScrollIndicator={false}
       >
         <View style={styles.card}>
           <View style={styles.cardHeader}>
@@ -1171,14 +1310,27 @@ export default function BookSummaryScreen({
                 ) : null}
               </View>
               <View style={styles.chapterBody}>
-                {savedParagraphs[index].map((paragraph, paragraphIndex) => (
-                  <Text
-                    key={`${chapter.number}-${paragraphIndex}`}
-                    style={[styles.chapterText, summaryTextStyle]}
-                  >
-                    {paragraph}
-                  </Text>
-                ))}
+                {savedParagraphs[index].map((paragraph, paragraphIndex) => {
+                  const paragraphKey = `${chapter.number}-${paragraphIndex}`;
+
+                  return (
+                    <Animated.View
+                      key={paragraphKey}
+                      ref={(node) => {
+                        paragraphRefs.current[paragraphKey] = node as View | null;
+                      }}
+                      style={
+                        highlightedParagraph === paragraphKey
+                          ? paragraphHighlightStyle
+                          : null
+                      }
+                    >
+                      <Text style={[styles.chapterText, summaryTextStyle]}>
+                        {paragraph}
+                      </Text>
+                    </Animated.View>
+                  );
+                })}
               </View>
             </Animated.View>
           ))}
@@ -1332,7 +1484,11 @@ export default function BookSummaryScreen({
         <TouchableOpacity
           style={[styles.settingsButton, styles.searchButton]}
           hitSlop={scale(8)}
-          onPress={() => setSearchVisible(true)}
+          onPress={() => {
+            setSearchQuery('');
+            setActiveResultIndex(0);
+            setSearchVisible(true);
+          }}
           accessibilityRole="button"
           accessibilityLabel="Buscar dentro del resumen"
         >
@@ -1555,35 +1711,70 @@ export default function BookSummaryScreen({
         visible={searchVisible}
         transparent
         animationType="fade"
-        onRequestClose={() => {
-          setSearchVisible(false);
-          setSearchQuery('');
-        }}
+        onRequestClose={closeSearch}
       >
         <TouchableOpacity
           style={styles.modalBackdrop}
           activeOpacity={1}
-          onPress={() => {
-            setSearchVisible(false);
-            setSearchQuery('');
-          }}
+          onPress={closeSearch}
         >
           <TouchableOpacity style={[styles.menu, styles.searchMenu]} activeOpacity={1}>
             <Text style={styles.menuTitle}>Buscar en el resumen</Text>
             <TextInput
               style={styles.searchInput}
               value={searchQuery}
-              onChangeText={setSearchQuery}
+              onChangeText={(text) => {
+                setSearchQuery(text);
+                setActiveResultIndex(0);
+              }}
               placeholder="Palabra o frase"
               placeholderTextColor={colors.muted}
               autoCorrect={false}
               returnKeyType="search"
               accessibilityLabel="Texto a buscar en el resumen"
             />
+            {searchResults.length > 0 ? (
+              <View style={styles.searchNav}>
+                <TouchableOpacity
+                  style={styles.searchNavButton}
+                  onPress={() =>
+                    setActiveResultIndex(
+                      (current) =>
+                        (current - 1 + searchResults.length) %
+                        searchResults.length,
+                    )
+                  }
+                  accessibilityRole="button"
+                  accessibilityLabel="Coincidencia anterior"
+                >
+                  <Text style={styles.searchNavButtonText}>‹ Anterior</Text>
+                </TouchableOpacity>
+                <Text style={styles.searchCounter}>
+                  {safeResultIndex + 1} / {searchResults.length}
+                </Text>
+                <TouchableOpacity
+                  style={styles.searchNavButton}
+                  onPress={() =>
+                    setActiveResultIndex(
+                      (current) => (current + 1) % searchResults.length,
+                    )
+                  }
+                  accessibilityRole="button"
+                  accessibilityLabel="Coincidencia siguiente"
+                >
+                  <Text style={styles.searchNavButtonText}>Siguiente ›</Text>
+                </TouchableOpacity>
+              </View>
+            ) : null}
             <ScrollView
+              ref={searchListRef}
               style={styles.searchResults}
               contentContainerStyle={styles.searchResultsContent}
               keyboardShouldPersistTaps="handled"
+              onScroll={(event) => {
+                searchListOffsetRef.current = event.nativeEvent.contentOffset.y;
+              }}
+              scrollEventThrottle={16}
             >
               {!normalizedQuery ? (
                 <Text style={styles.searchEmpty}>
@@ -1596,15 +1787,23 @@ export default function BookSummaryScreen({
               ) : (
                 searchResults.map((result, index) => (
                   <TouchableOpacity
-                    key={`${result.chapterNumber}-${index}`}
-                    style={styles.searchResult}
-                    onPress={() => {
-                      setSearchVisible(false);
-                      setSearchQuery('');
-                      focusChapter(result.chapterNumber);
+                    key={result.id}
+                    ref={(node) => {
+                      searchResultRefs.current[index] = node as View | null;
                     }}
+                    style={[
+                      styles.searchResult,
+                      index === safeResultIndex
+                        ? styles.searchResultActive
+                        : null,
+                    ]}
+                    onPress={() => focusSearchResult(result, index)}
                     accessibilityRole="button"
-                    accessibilityLabel={`Ir al capítulo ${result.chapterNumber}`}
+                    accessibilityLabel={`Ir a la coincidencia ${
+                      index + 1
+                    } de ${searchResults.length}, capítulo ${
+                      result.chapterNumber
+                    }`}
                   >
                     <Text style={styles.searchResultTitle}>
                       Capítulo {result.chapterNumber} · {result.chapterTitle}
@@ -1614,13 +1813,7 @@ export default function BookSummaryScreen({
                 ))
               )}
             </ScrollView>
-            <TouchableOpacity
-              onPress={() => {
-                setSearchVisible(false);
-                setSearchQuery('');
-              }}
-              accessibilityRole="button"
-            >
+            <TouchableOpacity onPress={closeSearch} accessibilityRole="button">
               <Text style={styles.link}>Cerrar</Text>
             </TouchableOpacity>
           </TouchableOpacity>
@@ -2287,6 +2480,29 @@ function createStyles(colors: Palette) {
     searchMenu: {
       maxHeight: '92%',
     },
+    searchNav: {
+      width: '100%',
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      gap: metrics.spacing.xs,
+    },
+    searchNavButton: {
+      paddingHorizontal: metrics.spacing.sm,
+      paddingVertical: metrics.spacing.xs,
+      borderRadius: metrics.radius.sm,
+      backgroundColor: colors.hint,
+    },
+    searchNavButtonText: {
+      color: colors.primary,
+      fontSize: scale(13),
+      fontWeight: '700',
+    },
+    searchCounter: {
+      color: colors.muted,
+      fontSize: scale(13),
+      fontWeight: '600',
+    },
     searchInput: {
       width: '100%',
       borderWidth: scale(1),
@@ -2312,6 +2528,11 @@ function createStyles(colors: Palette) {
       borderRadius: metrics.radius.sm,
       backgroundColor: colors.hint,
       gap: scale(4),
+    },
+    searchResultActive: {
+      borderWidth: scale(1),
+      borderColor: colors.primary,
+      backgroundColor: colors.surface,
     },
     searchResultTitle: {
       color: colors.primaryDark,
