@@ -665,6 +665,18 @@ export default function BookSummaryScreen({
   const colors = useMemo(() => resolveColors(activeScheme), [activeScheme]);
   const styles = useMemo(() => createStyles(colors), [colors]);
 
+  useEffect(() => {
+    if (typeof document === 'undefined') {
+      return;
+    }
+
+    document.body.style.backgroundColor = colors.background;
+
+    return () => {
+      document.body.style.backgroundColor = '';
+    };
+  }, [colors.background]);
+
   const stopChapterReading = () => {
     speechTokenRef.current += 1;
     void stopReading();
