@@ -787,7 +787,10 @@ export default function BookSummaryScreen({
         <View style={styles.card}>
           <View style={styles.cardHeader}>
             <TouchableOpacity
-              style={styles.readAloudButton}
+              style={[
+                styles.readAloudButton,
+                !readAloud ? styles.readAloudButtonOff : null,
+              ]}
               hitSlop={scale(8)}
               onPress={() => setVoiceSettingsVisible(true)}
               accessibilityRole="button"
@@ -802,16 +805,10 @@ export default function BookSummaryScreen({
                 🔊
               </Text>
               {!readAloud ? (
-                <>
-                  <View
-                    pointerEvents="none"
-                    style={styles.readAloudOffCircle}
-                  />
-                  <View
-                    pointerEvents="none"
-                    style={styles.readAloudSlash}
-                  />
-                </>
+                <View
+                  pointerEvents="none"
+                  style={styles.readAloudSlash}
+                />
               ) : null}
             </TouchableOpacity>
             <Text style={styles.eyebrow}>RESUMEN POR CAPÍTULOS</Text>
@@ -1675,6 +1672,10 @@ function createStyles(colors: Palette) {
       borderColor: colors.border,
       backgroundColor: colors.background,
     },
+    readAloudButtonOff: {
+      borderColor: colors.danger,
+      borderWidth: scale(2),
+    },
     readAloudIcon: {
       color: colors.muted,
       fontSize: scale(17),
@@ -1683,17 +1684,9 @@ function createStyles(colors: Palette) {
     readAloudIconActive: {
       color: colors.primary,
     },
-    readAloudOffCircle: {
-      position: 'absolute',
-      width: scale(26),
-      height: scale(26),
-      borderRadius: scale(13),
-      borderWidth: scale(2),
-      borderColor: colors.danger,
-    },
     readAloudSlash: {
       position: 'absolute',
-      width: scale(20),
+      width: scale(22),
       height: scale(3),
       borderRadius: scale(2),
       backgroundColor: colors.danger,
