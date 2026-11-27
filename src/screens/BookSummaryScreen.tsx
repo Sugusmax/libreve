@@ -670,10 +670,10 @@ export default function BookSummaryScreen({
       return;
     }
 
-    document.body.style.backgroundColor = colors.background;
+    document.documentElement.style.setProperty('--libreve-bg', colors.background);
 
     return () => {
-      document.body.style.backgroundColor = '';
+      document.documentElement.style.removeProperty('--libreve-bg');
     };
   }, [colors.background]);
 
@@ -791,6 +791,7 @@ export default function BookSummaryScreen({
       <StatusBar style={activeScheme === 'dark' ? 'light' : 'dark'} />
       <ScrollView
         ref={scrollRef}
+        style={styles.scrollView}
         contentContainerStyle={styles.content}
         onScroll={handleScroll}
         scrollEventThrottle={16}
@@ -1291,6 +1292,9 @@ function createStyles(colors: Palette) {
   return StyleSheet.create({
     container: {
       flex: 1,
+      backgroundColor: colors.background,
+    },
+    scrollView: {
       backgroundColor: colors.background,
     },
     content: {
