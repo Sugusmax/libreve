@@ -95,6 +95,10 @@ const THEME_META: Record<ThemeMode, { icon: string; label: string }> = {
   auto: { icon: '◐', label: 'Auto' },
 };
 
+// Sin botón de reintento: si la IA falla al terminar el libro, probamos unas
+// veces en segundo plano y dejamos de insistir para no gastar peticiones.
+const SIMILAR_MAX_ATTEMPTS = 3;
+
 function splitIntoParagraphs(text: string): string[] {
   const normalized = text
     .replace(/\r\n?/g, '\n')
@@ -267,17 +271,14 @@ export default function BookSummaryScreen({
     lastOffsetRef.current = offset;
   };
 
-  const loadSimilar = async (silent = false) => {
+  const loadSimilar = async () => {
     if (similarRequestedRef.current) {
       return;
     }
 
     similarRequestedRef.current = true;
     setIsLoadingSimilar(true);
-
-    if (!silent) {
-      setStatus('');
-    }
+    setStatus('');
 
     try {
       const [saved, library] = await Promise.all([
@@ -301,31 +302,34 @@ export default function BookSummaryScreen({
         return;
       }
 
-      const books = onlyUnread(
-        await fetchSimilarBooks(book, setStatus, alreadyRead),
-      );
+      // No pasamos setStatus a la IA: mientras llegan las sugerencias solo se
+      // muestra «Cargando sugerencias…», sin estados internos del proveedor.
+      for (let attempt = 0; attempt < SIMILAR_MAX_ATTEMPTS; attempt += 1) {
+        try {
+          const books = onlyUnread(
+            await fetchSimilarBooks(book, undefined, alreadyRead),
+          );
 
-      if (books.length === 0) {
-        throw new Error('La IA no devolvió títulos nuevos para recomendar.');
+          if (books.length === 0) {
+            throw new Error('La IA no devolvió títulos nuevos.');
+          }
+
+          setSimilarBooks(books);
+
+          try {
+            await saveSimilarBooks(book, books);
+          } catch {
+            // Las sugerencias siguen disponibles en esta sesión.
+          }
+
+          return;
+        } catch {
+          // Reintento automático acotado: si agotamos los intentos, seguimos
+          // leyendo sin mostrar errores ni ofrecer un botón.
+        }
       }
-
-      setSimilarBooks(books);
-
-      try {
-        await saveSimilarBooks(book, books);
-      } catch {
-        // Las sugerencias siguen disponibles en esta sesión.
-      }
-    } catch (error) {
-      similarRequestedRef.current = false;
-
-      if (!silent) {
-        setStatus(
-          error instanceof Error
-            ? error.message
-            : 'No se pudieron cargar títulos similares.',
-        );
-      }
+    } catch {
+      // Falló la lectura local: tampoco hay botón que volver a pulsar.
     } finally {
       setIsLoadingSimilar(false);
     }
@@ -357,7 +361,7 @@ export default function BookSummaryScreen({
     if (isFinished) {
       similarRequestedRef.current = false;
     } else {
-      await loadSimilar();
+      void loadSimilar();
     }
   };
 
@@ -381,12 +385,6 @@ export default function BookSummaryScreen({
         undefined,
         ({ title, summary, isLast }) => {
           setDraft({ number, title, summary, isLast });
-
-          // En cuanto la IA marca el final, empezamos a buscar recomendaciones
-          // mientras el último capítulo sigue escribiéndose en pantalla.
-          if (isLast && !similarRequestedRef.current) {
-            void loadSimilar(true);
-          }
         },
       );
       const updated = [...chapters, chapter];
@@ -403,7 +401,9 @@ export default function BookSummaryScreen({
       }
 
       if (chapter.isLast) {
-        await loadSimilar();
+        // El libro ya terminó: pedimos las sugerencias sin bloquear el cierre
+        // del capítulo ni esperar a que el usuario pulse nada.
+        void loadSimilar();
       }
     } catch (error) {
       setDraft(null);
@@ -438,10 +438,6 @@ export default function BookSummaryScreen({
         target,
         ({ title, summary, isLast }) => {
           setDraft({ number: target, title, summary, isLast });
-
-          if (isLast && !similarRequestedRef.current) {
-            void loadSimilar(true);
-          }
         },
       );
       const updated = chapters
@@ -457,6 +453,10 @@ export default function BookSummaryScreen({
         await saveChapters(book, updated);
       } catch {
         // El resumen sigue disponible en esta sesión.
+      }
+
+      if (chapter.isLast) {
+        void loadSimilar();
       }
     } catch (error) {
       setDraft(null);
@@ -667,8 +667,7 @@ export default function BookSummaryScreen({
     () => chapters.map((chapter) => splitIntoParagraphs(chapter.summary)),
     [chapters],
   );
-  const showWorking =
-    isRestoring || isLoading || (isLoadingSimilar && similarBooks.length === 0);
+  const showWorking = isRestoring || isLoading;
   const largeCover =
     book.coverLargeUrl ?? upgradeCoverUrl(book.coverUrl) ?? book.coverUrl;
   const styles = useMemo(() => createStyles(colors), [colors]);
@@ -984,11 +983,8 @@ export default function BookSummaryScreen({
                     </TouchableOpacity>
                   ))}
                 </View>
-              ) : !isLoading && !isLoadingSimilar ? (
-                <PrimaryButton colors={colors}
-                  label="Reintentar sugerencias"
-                  onPress={() => void loadSimilar()}
-                />
+              ) : isLoadingSimilar ? (
+                <Text style={styles.status}>Cargando sugerencias…</Text>
               ) : null}
             </>
           ) : !isRestoring && !isLoading ? (
