@@ -35,6 +35,12 @@ import {
 } from '../services/ai';
 import { upgradeCoverUrl } from '../services/covers';
 import {
+  loadReadAloud,
+  readText,
+  saveReadAloud,
+  stopReading,
+} from '../services/readAloud';
+import {
   booksMatch,
   loadChapters,
   loadLibrary,
@@ -138,6 +144,8 @@ export default function BookSummaryScreen({
   const [keyStatus, setKeyStatus] = useState('');
   const [themeMode, setThemeMode] = useState<ThemeMode>('light');
   const [systemScheme, setSystemScheme] = useState<ColorScheme>(getSystemScheme);
+  const [readAloud, setReadAloud] = useState(false);
+  const [speakingChapter, setSpeakingChapter] = useState<number | null>(null);
   const [highlightedChapter, setHighlightedChapter] = useState<number | null>(
     null,
   );
@@ -150,6 +158,7 @@ export default function BookSummaryScreen({
   const userScrolledRef = useRef(false);
   const similarRequestedRef = useRef(false);
   const lastOffsetRef = useRef(0);
+  const speechTokenRef = useRef(0);
 
   useEffect(() => {
     let active = true;
@@ -162,11 +171,21 @@ export default function BookSummaryScreen({
       })
       .catch(() => undefined);
 
+    void loadReadAloud()
+      .then((enabled) => {
+        if (active) {
+          setReadAloud(enabled);
+        }
+      })
+      .catch(() => undefined);
+
     const unsubscribe = subscribeToSystemScheme(setSystemScheme);
 
     return () => {
       active = false;
       unsubscribe();
+      speechTokenRef.current += 1;
+      void stopReading();
     };
   }, []);
 
@@ -628,6 +647,49 @@ export default function BookSummaryScreen({
     THEME_MODES[(THEME_MODES.indexOf(themeMode) + 1) % THEME_MODES.length];
   const colors = useMemo(() => resolveColors(activeScheme), [activeScheme]);
   const styles = useMemo(() => createStyles(colors), [colors]);
+
+  const stopChapterReading = () => {
+    speechTokenRef.current += 1;
+    void stopReading();
+    setSpeakingChapter(null);
+  };
+
+  const toggleReadAloud = () => {
+    const enabled = !readAloud;
+
+    setReadAloud(enabled);
+    void saveReadAloud(enabled);
+
+    if (!enabled) {
+      stopChapterReading();
+    }
+  };
+
+  const toggleChapterReading = (chapter: BookChapter) => {
+    if (speakingChapter === chapter.number) {
+      stopChapterReading();
+      return;
+    }
+
+    speechTokenRef.current += 1;
+    const token = speechTokenRef.current;
+    setSpeakingChapter(chapter.number);
+
+    readText(splitIntoParagraphs(chapter.summary).join('\n'), {
+      isCancelled: () => speechTokenRef.current !== token,
+      onDone: () => {
+        if (speechTokenRef.current === token) {
+          setSpeakingChapter(null);
+        }
+      },
+      onError: () => {
+        if (speechTokenRef.current === token) {
+          setSpeakingChapter(null);
+        }
+      },
+    });
+  };
+
   const chapterHighlightStyle = {
     backgroundColor: highlightRef.interpolate({
       inputRange: [0, 1],
@@ -651,6 +713,26 @@ export default function BookSummaryScreen({
       >
         <View style={styles.card}>
           <View style={styles.cardHeader}>
+            <TouchableOpacity
+              style={styles.readAloudButton}
+              hitSlop={scale(8)}
+              onPress={toggleReadAloud}
+              accessibilityRole="button"
+              accessibilityLabel={
+                readAloud
+                  ? 'Desactivar lectura en voz alta'
+                  : 'Activar lectura en voz alta'
+              }
+            >
+              <Text
+                style={[
+                  styles.readAloudIcon,
+                  readAloud ? styles.readAloudIconActive : null,
+                ]}
+              >
+                {readAloud ? '🔊' : '🔈'}
+              </Text>
+            </TouchableOpacity>
             <Text style={styles.eyebrow}>RESUMEN POR CAPÍTULOS</Text>
             <TouchableOpacity
               style={styles.themeButton}
@@ -711,15 +793,35 @@ export default function BookSummaryScreen({
                   : null,
               ]}
             >
-              <TouchableOpacity
-                onPress={() => setMenuChapter(chapter)}
-                accessibilityRole="button"
-                accessibilityLabel={`Opciones del capítulo ${chapter.number}`}
-              >
-                <Text style={styles.chapterHeading}>
-                  Capítulo {chapter.number} · {chapter.title}
-                </Text>
-              </TouchableOpacity>
+              <View style={styles.chapterHeader}>
+                <TouchableOpacity
+                  style={styles.chapterHeadingButton}
+                  onPress={() => setMenuChapter(chapter)}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Opciones del capítulo ${chapter.number}`}
+                >
+                  <Text style={styles.chapterHeading}>
+                    Capítulo {chapter.number} · {chapter.title}
+                  </Text>
+                </TouchableOpacity>
+                {readAloud ? (
+                  <TouchableOpacity
+                    style={styles.speakButton}
+                    hitSlop={scale(6)}
+                    onPress={() => toggleChapterReading(chapter)}
+                    accessibilityRole="button"
+                    accessibilityLabel={
+                      speakingChapter === chapter.number
+                        ? `Detener lectura del capítulo ${chapter.number}`
+                        : `Leer capítulo ${chapter.number} en voz alta`
+                    }
+                  >
+                    <Text style={styles.speakIcon}>
+                      {speakingChapter === chapter.number ? '■' : '▶'}
+                    </Text>
+                  </TouchableOpacity>
+                ) : null}
+              </View>
               <View style={styles.chapterBody}>
                 {savedParagraphs[index].map((paragraph, paragraphIndex) => (
                   <Text
@@ -1109,6 +1211,29 @@ function createStyles(colors: Palette) {
       padding: metrics.spacing.md,
       gap: metrics.spacing.xs,
     },
+    chapterHeader: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: metrics.spacing.xs,
+    },
+    chapterHeadingButton: {
+      flex: 1,
+    },
+    speakButton: {
+      width: scale(26),
+      height: scale(26),
+      alignItems: 'center',
+      justifyContent: 'center',
+      borderRadius: scale(13),
+      borderWidth: scale(1),
+      borderColor: colors.border,
+      backgroundColor: colors.surface,
+    },
+    speakIcon: {
+      color: colors.primary,
+      fontSize: scale(11),
+      textAlign: 'center',
+    },
     draft: {
       opacity: 0.85,
     },
@@ -1307,6 +1432,26 @@ function createStyles(colors: Palette) {
       alignItems: 'center',
       justifyContent: 'center',
       minHeight: scale(32),
+    },
+    readAloudButton: {
+      position: 'absolute',
+      left: 0,
+      width: scale(32),
+      height: scale(32),
+      alignItems: 'center',
+      justifyContent: 'center',
+      borderRadius: scale(16),
+      borderWidth: scale(1),
+      borderColor: colors.border,
+      backgroundColor: colors.background,
+    },
+    readAloudIcon: {
+      color: colors.muted,
+      fontSize: scale(14),
+      textAlign: 'center',
+    },
+    readAloudIconActive: {
+      color: colors.primary,
     },
     themeButton: {
       position: 'absolute',
