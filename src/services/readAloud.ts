@@ -14,8 +14,8 @@ export type ReadAloudSettings = {
 export const DEFAULT_READ_ALOUD_SETTINGS: ReadAloudSettings = {
   rate: 1,
   pitch: 1,
-  commaPauseMs: 200,
-  periodPauseMs: 400,
+  commaPauseMs: 100,
+  periodPauseMs: 250,
 };
 
 export const READ_ALOUD_LIMITS: Record<
@@ -24,8 +24,8 @@ export const READ_ALOUD_LIMITS: Record<
 > = {
   rate: { min: 0.6, max: 1.8, step: 0.1 },
   pitch: { min: 0.6, max: 1.6, step: 0.1 },
-  commaPauseMs: { min: 0, max: 800, step: 100 },
-  periodPauseMs: { min: 0, max: 1500, step: 100 },
+  commaPauseMs: { min: 0, max: 400, step: 50 },
+  periodPauseMs: { min: 0, max: 800, step: 100 },
 };
 
 export type ReadAloudHandlers = {
@@ -216,11 +216,13 @@ export function readText(
           return;
         }
 
-        if (unit.pause > 0 && index < units.length) {
+        const delay = Math.min(2000, Math.max(0, Number(unit.pause) || 0));
+
+        if (delay > 0 && index < units.length) {
           pendingTimer = setTimeout(() => {
             pendingTimer = null;
             speakNext();
-          }, unit.pause);
+          }, delay);
           return;
         }
 

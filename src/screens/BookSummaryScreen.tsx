@@ -1237,15 +1237,18 @@ export default function BookSummaryScreen({
               'Tono',
               `${voiceSettings.pitch.toFixed(1)}×`,
             )}
+            <Text style={styles.voiceHint}>
+              Las pausas se miden en milisegundos (1000 ms = 1 s).
+            </Text>
             {renderVoiceSettingRow(
               'commaPauseMs',
-              'Pausa coma',
-              `${voiceSettings.commaPauseMs} ms`,
+              'Pausa coma (ms)',
+              `${voiceSettings.commaPauseMs}`,
             )}
             {renderVoiceSettingRow(
               'periodPauseMs',
-              'Pausa punto',
-              `${voiceSettings.periodPauseMs} ms`,
+              'Pausa punto (ms)',
+              `${voiceSettings.periodPauseMs}`,
             )}
             <TouchableOpacity
               onPress={resetVoiceSettings}
@@ -1506,6 +1509,11 @@ function createStyles(colors: Palette) {
     },
     voiceToggleTextOn: {
       color: colors.surface,
+    },
+    voiceHint: {
+      color: colors.muted,
+      fontSize: metrics.font.body,
+      textAlign: 'center',
     },
     voiceSettingRow: {
       width: '100%',
