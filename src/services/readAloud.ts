@@ -1,4 +1,5 @@
 import * as Speech from 'expo-speech';
+import { Platform } from 'react-native';
 import { getItem, setItem } from './storage';
 
 const READ_ALOUD_KEY = 'bibliary.readAloud';
@@ -194,6 +195,24 @@ export function readText(
   const isActive = () =>
     currentGeneration === generation && !handlers.isCancelled?.();
 
+  const continueAfter = (unit: { pause: number }) => {
+    if (!isActive()) {
+      return;
+    }
+
+    const delay = Math.min(2000, Math.max(0, Number(unit.pause) || 0));
+
+    if (delay > 0 && index < units.length) {
+      pendingTimer = setTimeout(() => {
+        pendingTimer = null;
+        speakNext();
+      }, delay);
+      return;
+    }
+
+    speakNext();
+  };
+
   const speakNext = () => {
     if (!isActive()) {
       return;
@@ -207,28 +226,24 @@ export function readText(
     const unit = units[index];
     index += 1;
 
+    // Chrome puede dejar el sintetizador en pausa cuando la cola se vacía
+    // durante la espera; reanudarlo antes de cada frase evita el bloqueo.
+    if (Platform.OS === 'web') {
+      void Speech.resume().catch(() => undefined);
+    }
+
     Speech.speak(unit.text, {
       language: 'es',
       rate: settings.rate,
       pitch: settings.pitch,
-      onDone: () => {
-        if (!isActive()) {
-          return;
+      onDone: () => continueAfter(unit),
+      onStopped: () => {
+        if (isActive()) {
+          continueAfter(unit);
+        } else {
+          handlers.onDone?.();
         }
-
-        const delay = Math.min(2000, Math.max(0, Number(unit.pause) || 0));
-
-        if (delay > 0 && index < units.length) {
-          pendingTimer = setTimeout(() => {
-            pendingTimer = null;
-            speakNext();
-          }, delay);
-          return;
-        }
-
-        speakNext();
       },
-      onStopped: () => handlers.onDone?.(),
       onError: () => handlers.onError?.(),
     });
   };
