@@ -8,6 +8,7 @@ export const lightColors = {
   muted: '#706A7B',
   border: '#E4DED4',
   hint: '#F1E8DA',
+  danger: '#D93025',
 } as const;
 
 export const darkColors = {
@@ -20,6 +21,7 @@ export const darkColors = {
   muted: '#ADA6BC',
   border: '#3A3546',
   hint: '#2C2836',
+  danger: '#FF6B6B',
 } as const;
 
 export type Palette = { [Key in keyof typeof lightColors]: string };

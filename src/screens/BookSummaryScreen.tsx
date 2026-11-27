@@ -1679,10 +1679,10 @@ function createStyles(colors: Palette) {
     },
     readAloudSlash: {
       position: 'absolute',
-      width: scale(24),
-      height: scale(1.5),
-      borderRadius: scale(1),
-      backgroundColor: colors.muted,
+      width: scale(26),
+      height: scale(3),
+      borderRadius: scale(2),
+      backgroundColor: colors.danger,
       transform: [{ rotate: '-45deg' }],
     },
     themeButton: {
