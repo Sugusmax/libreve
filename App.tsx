@@ -7,6 +7,7 @@ import LibraryScreen from './src/screens/LibraryScreen';
 import RecommendationsScreen from './src/screens/RecommendationsScreen';
 import SearchScreen from './src/screens/SearchScreen';
 import SuggestionsScreen from './src/screens/SuggestionsScreen';
+import { initializeAds, showBookAd } from './src/services/ads';
 import { loadApiKey } from './src/services/apiKey';
 import type { BookSuggestion } from './src/services/ai';
 import {
@@ -194,7 +195,22 @@ export default function App() {
     void clearLastBook();
   };
 
-  const openBook = (book: BookSuggestion) => push({ name: 'bookSummary', book });
+  const adBusyRef = useRef(false);
+
+  const openBook = (book: BookSuggestion) => {
+    if (adBusyRef.current) {
+      return;
+    }
+
+    adBusyRef.current = true;
+
+    void showBookAd()
+      .catch(() => undefined)
+      .finally(() => {
+        adBusyRef.current = false;
+        push({ name: 'bookSummary', book });
+      });
+  };
 
   // Se registra una sola vez al montar App. Así, los listeners que registren
   // las pantallas para cerrar sus modales se ejecutan primero (RN los llama en
@@ -207,6 +223,8 @@ export default function App() {
       'hardwareBackPress',
       () => popRef.current(),
     );
+
+    void initializeAds();
 
     return () => subscription.remove();
   }, []);
