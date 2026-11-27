@@ -10,7 +10,6 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { StatusBar } from 'expo-status-bar';
 import PrimaryButton from '../components/PrimaryButton';
 import type { BookSuggestion } from '../services/ai';
 import {
@@ -19,7 +18,8 @@ import {
   loadLibrary,
   type LibraryEntry,
 } from '../services/library';
-import { colors } from '../theme/colors';
+import { useAppTheme } from '../theme/AppTheme';
+import { type Palette } from '../theme/colors';
 import { metrics, scale } from '../theme/metrics';
 
 type LibraryScreenProps = {
@@ -50,6 +50,8 @@ export default function LibraryScreen({
   onOpenSearch,
   onSelectBook,
 }: LibraryScreenProps) {
+  const { colors } = useAppTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
   const [entries, setEntries] = useState<LibraryEntry[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [status, setStatus] = useState('');
@@ -160,7 +162,6 @@ export default function LibraryScreen({
 
   return (
     <View style={styles.container}>
-      <StatusBar style="dark" />
       <ScrollView contentContainerStyle={styles.content}>
         <View style={styles.card}>
           <Text style={styles.eyebrow}>TUS LECTURAS GUARDADAS</Text>
@@ -261,7 +262,7 @@ export default function LibraryScreen({
           <TouchableOpacity onPress={onOpenSearch} accessibilityRole="button">
             <Text style={styles.link}>Buscar cualquier libro</Text>
           </TouchableOpacity>
-          <PrimaryButton label="Volver" onPress={onBack} />
+          <PrimaryButton colors={colors} label="Volver" onPress={onBack} />
         </View>
       </ScrollView>
 
@@ -365,7 +366,7 @@ export default function LibraryScreen({
               ». Para volver a leerlo habrá que generarlos de nuevo y gastar
               tokens.
             </Text>
-            <PrimaryButton label="Borrar" onPress={() => void confirmDelete()} />
+            <PrimaryButton colors={colors} label="Borrar" onPress={() => void confirmDelete()} />
             <TouchableOpacity
               onPress={() => setPendingDelete(null)}
               accessibilityRole="button"
@@ -379,262 +380,264 @@ export default function LibraryScreen({
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: colors.background,
-  },
-  content: {
-    flexGrow: 1,
-    width: '100%',
-    paddingHorizontal: '6%',
-    paddingVertical: metrics.spacing.xl,
-  },
-  card: {
-    width: '100%',
-    alignItems: 'center',
-    backgroundColor: colors.surface,
-    borderRadius: metrics.radius.lg,
-    padding: metrics.spacing.lg,
-    gap: metrics.spacing.md,
-    shadowColor: colors.primaryDark,
-    shadowOpacity: 0.08,
-    shadowRadius: metrics.radius.md,
-    shadowOffset: { width: 0, height: scale(6) },
-    elevation: 3,
-  },
-  eyebrow: {
-    color: colors.accent,
-    fontSize: metrics.font.eyebrow,
-    fontWeight: '700',
-    letterSpacing: scale(1.4),
-    textAlign: 'center',
-  },
-  title: {
-    color: colors.primaryDark,
-    fontSize: metrics.font.title,
-    fontWeight: '700',
-    textAlign: 'center',
-  },
-  description: {
-    color: colors.muted,
-    fontSize: metrics.font.body,
-    lineHeight: scale(20),
-    textAlign: 'center',
-  },
-  empty: {
-    color: colors.muted,
-    fontSize: metrics.font.body,
-    lineHeight: scale(20),
-    textAlign: 'center',
-  },
-  sortBar: {
-    alignSelf: 'stretch',
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: metrics.spacing.md,
-    paddingVertical: metrics.spacing.sm,
-    borderRadius: metrics.radius.md,
-    backgroundColor: colors.hint,
-  },
-  sortLabel: {
-    color: colors.muted,
-    fontSize: metrics.font.eyebrow,
-    fontWeight: '700',
-    letterSpacing: scale(1),
-  },
-  sortValue: {
-    color: colors.primaryDark,
-    fontSize: metrics.font.body,
-    fontWeight: '700',
-  },
-  sortChevron: {
-    color: colors.primary,
-    fontSize: scale(22),
-    fontWeight: '700',
-    lineHeight: scale(24),
-  },
-  sheetBackdrop: {
-    flex: 1,
-    justifyContent: 'flex-end',
-    backgroundColor: 'rgba(38, 31, 50, 0.45)',
-  },
-  sheetOutside: {
-    ...StyleSheet.absoluteFillObject,
-  },
-  sheet: {
-    backgroundColor: colors.surface,
-    borderTopLeftRadius: metrics.radius.lg,
-    borderTopRightRadius: metrics.radius.lg,
-    paddingHorizontal: metrics.spacing.lg,
-    paddingTop: metrics.spacing.sm,
-    paddingBottom: metrics.spacing.xl,
-    gap: metrics.spacing.xs,
-  },
-  sheetHandle: {
-    alignSelf: 'center',
-    width: scale(40),
-    height: scale(4),
-    borderRadius: metrics.radius.pill,
-    backgroundColor: colors.border,
-    marginBottom: metrics.spacing.sm,
-  },
-  sheetTitle: {
-    color: colors.primaryDark,
-    fontSize: metrics.font.heading,
-    fontWeight: '700',
-    marginBottom: metrics.spacing.xs,
-  },
-  directionRow: {
-    flexDirection: 'row',
-    gap: metrics.spacing.xs,
-    marginBottom: metrics.spacing.sm,
-  },
-  directionButton: {
-    flex: 1,
-    alignItems: 'center',
-    paddingVertical: metrics.spacing.sm,
-    borderRadius: metrics.radius.md,
-    backgroundColor: colors.hint,
-  },
-  directionButtonSelected: {
-    backgroundColor: colors.primary,
-  },
-  directionButtonText: {
-    color: colors.muted,
-    fontSize: metrics.font.body,
-    fontWeight: '600',
-  },
-  directionButtonTextSelected: {
-    color: colors.surface,
-  },
-  sheetOption: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingVertical: metrics.spacing.sm,
-    borderBottomWidth: scale(1),
-    borderBottomColor: colors.border,
-  },
-  sheetOptionSelected: {
-    borderBottomColor: colors.primary,
-  },
-  sheetOptionText: {
-    color: colors.text,
-    fontSize: metrics.font.body,
-  },
-  sheetOptionTextSelected: {
-    color: colors.primary,
-    fontWeight: '700',
-  },
-  sheetCheck: {
-    color: colors.primary,
-    fontSize: metrics.font.heading,
-    fontWeight: '700',
-  },
-  bookRow: {
-    alignSelf: 'stretch',
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: metrics.spacing.xs,
-    paddingBottom: metrics.spacing.sm,
-    borderBottomWidth: scale(1),
-    borderBottomColor: colors.border,
-  },
-  bookMain: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: metrics.spacing.sm,
-  },
-  cover: {
-    width: scale(70),
-    height: scale(105),
-    borderRadius: metrics.radius.sm,
-    backgroundColor: colors.hint,
-  },
-  bookInfo: {
-    flex: 1,
-    gap: metrics.spacing.xs,
-  },
-  bookTitle: {
-    color: colors.text,
-    fontSize: metrics.font.body,
-    fontWeight: '700',
-  },
-  bookAuthor: {
-    color: colors.accent,
-    fontSize: metrics.font.body,
-    fontWeight: '600',
-  },
-  chapterCount: {
-    color: colors.accent,
-    fontSize: metrics.font.body,
-    fontWeight: '600',
-  },
-  savedCount: {
-    color: colors.muted,
-    fontSize: metrics.font.body,
-  },
-  readCount: {
-    color: colors.muted,
-    fontSize: metrics.font.body,
-  },
-  deleteButton: {
-    paddingHorizontal: metrics.spacing.xs,
-    paddingVertical: metrics.spacing.sm,
-  },
-  deleteText: {
-    color: colors.primary,
-    fontSize: metrics.font.body,
-    fontWeight: '600',
-    textDecorationLine: 'underline',
-  },
-  status: {
-    color: colors.primary,
-    fontSize: metrics.font.body,
-    fontWeight: '600',
-    textAlign: 'center',
-  },
-  link: {
-    color: colors.primary,
-    fontSize: metrics.font.body,
-    fontWeight: '600',
-    textAlign: 'center',
-    textDecorationLine: 'underline',
-  },
-  modalBackdrop: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'rgba(0, 0, 0, 0.6)',
-    padding: metrics.spacing.lg,
-  },
-  modalCard: {
-    width: '100%',
-    alignItems: 'center',
-    backgroundColor: colors.surface,
-    borderRadius: metrics.radius.lg,
-    padding: metrics.spacing.lg,
-    gap: metrics.spacing.md,
-  },
-  modalTitle: {
-    color: colors.primaryDark,
-    fontSize: metrics.font.heading,
-    fontWeight: '700',
-    textAlign: 'center',
-  },
-  modalText: {
-    color: colors.muted,
-    fontSize: metrics.font.body,
-    lineHeight: scale(20),
-    textAlign: 'center',
-  },
-  cancelText: {
-    color: colors.primary,
-    fontSize: metrics.font.body,
-    fontWeight: '600',
-    textDecorationLine: 'underline',
-  },
-});
+function createStyles(colors: Palette) {
+  return StyleSheet.create({
+    container: {
+      flex: 1,
+      backgroundColor: colors.background,
+    },
+    content: {
+      flexGrow: 1,
+      width: '100%',
+      paddingHorizontal: '6%',
+      paddingVertical: metrics.spacing.xl,
+    },
+    card: {
+      width: '100%',
+      alignItems: 'center',
+      backgroundColor: colors.surface,
+      borderRadius: metrics.radius.lg,
+      padding: metrics.spacing.lg,
+      gap: metrics.spacing.md,
+      shadowColor: colors.primaryDark,
+      shadowOpacity: 0.08,
+      shadowRadius: metrics.radius.md,
+      shadowOffset: { width: 0, height: scale(6) },
+      elevation: 3,
+    },
+    eyebrow: {
+      color: colors.accent,
+      fontSize: metrics.font.eyebrow,
+      fontWeight: '700',
+      letterSpacing: scale(1.4),
+      textAlign: 'center',
+    },
+    title: {
+      color: colors.primaryDark,
+      fontSize: metrics.font.title,
+      fontWeight: '700',
+      textAlign: 'center',
+    },
+    description: {
+      color: colors.muted,
+      fontSize: metrics.font.body,
+      lineHeight: scale(20),
+      textAlign: 'center',
+    },
+    empty: {
+      color: colors.muted,
+      fontSize: metrics.font.body,
+      lineHeight: scale(20),
+      textAlign: 'center',
+    },
+    sortBar: {
+      alignSelf: 'stretch',
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      paddingHorizontal: metrics.spacing.md,
+      paddingVertical: metrics.spacing.sm,
+      borderRadius: metrics.radius.md,
+      backgroundColor: colors.hint,
+    },
+    sortLabel: {
+      color: colors.muted,
+      fontSize: metrics.font.eyebrow,
+      fontWeight: '700',
+      letterSpacing: scale(1),
+    },
+    sortValue: {
+      color: colors.primaryDark,
+      fontSize: metrics.font.body,
+      fontWeight: '700',
+    },
+    sortChevron: {
+      color: colors.primary,
+      fontSize: scale(22),
+      fontWeight: '700',
+      lineHeight: scale(24),
+    },
+    sheetBackdrop: {
+      flex: 1,
+      justifyContent: 'flex-end',
+      backgroundColor: 'rgba(38, 31, 50, 0.45)',
+    },
+    sheetOutside: {
+      ...StyleSheet.absoluteFillObject,
+    },
+    sheet: {
+      backgroundColor: colors.surface,
+      borderTopLeftRadius: metrics.radius.lg,
+      borderTopRightRadius: metrics.radius.lg,
+      paddingHorizontal: metrics.spacing.lg,
+      paddingTop: metrics.spacing.sm,
+      paddingBottom: metrics.spacing.xl,
+      gap: metrics.spacing.xs,
+    },
+    sheetHandle: {
+      alignSelf: 'center',
+      width: scale(40),
+      height: scale(4),
+      borderRadius: metrics.radius.pill,
+      backgroundColor: colors.border,
+      marginBottom: metrics.spacing.sm,
+    },
+    sheetTitle: {
+      color: colors.primaryDark,
+      fontSize: metrics.font.heading,
+      fontWeight: '700',
+      marginBottom: metrics.spacing.xs,
+    },
+    directionRow: {
+      flexDirection: 'row',
+      gap: metrics.spacing.xs,
+      marginBottom: metrics.spacing.sm,
+    },
+    directionButton: {
+      flex: 1,
+      alignItems: 'center',
+      paddingVertical: metrics.spacing.sm,
+      borderRadius: metrics.radius.md,
+      backgroundColor: colors.hint,
+    },
+    directionButtonSelected: {
+      backgroundColor: colors.primary,
+    },
+    directionButtonText: {
+      color: colors.muted,
+      fontSize: metrics.font.body,
+      fontWeight: '600',
+    },
+    directionButtonTextSelected: {
+      color: colors.surface,
+    },
+    sheetOption: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      paddingVertical: metrics.spacing.sm,
+      borderBottomWidth: scale(1),
+      borderBottomColor: colors.border,
+    },
+    sheetOptionSelected: {
+      borderBottomColor: colors.primary,
+    },
+    sheetOptionText: {
+      color: colors.text,
+      fontSize: metrics.font.body,
+    },
+    sheetOptionTextSelected: {
+      color: colors.primary,
+      fontWeight: '700',
+    },
+    sheetCheck: {
+      color: colors.primary,
+      fontSize: metrics.font.heading,
+      fontWeight: '700',
+    },
+    bookRow: {
+      alignSelf: 'stretch',
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: metrics.spacing.xs,
+      paddingBottom: metrics.spacing.sm,
+      borderBottomWidth: scale(1),
+      borderBottomColor: colors.border,
+    },
+    bookMain: {
+      flex: 1,
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: metrics.spacing.sm,
+    },
+    cover: {
+      width: scale(70),
+      height: scale(105),
+      borderRadius: metrics.radius.sm,
+      backgroundColor: colors.hint,
+    },
+    bookInfo: {
+      flex: 1,
+      gap: metrics.spacing.xs,
+    },
+    bookTitle: {
+      color: colors.text,
+      fontSize: metrics.font.body,
+      fontWeight: '700',
+    },
+    bookAuthor: {
+      color: colors.accent,
+      fontSize: metrics.font.body,
+      fontWeight: '600',
+    },
+    chapterCount: {
+      color: colors.accent,
+      fontSize: metrics.font.body,
+      fontWeight: '600',
+    },
+    savedCount: {
+      color: colors.muted,
+      fontSize: metrics.font.body,
+    },
+    readCount: {
+      color: colors.muted,
+      fontSize: metrics.font.body,
+    },
+    deleteButton: {
+      paddingHorizontal: metrics.spacing.xs,
+      paddingVertical: metrics.spacing.sm,
+    },
+    deleteText: {
+      color: colors.primary,
+      fontSize: metrics.font.body,
+      fontWeight: '600',
+      textDecorationLine: 'underline',
+    },
+    status: {
+      color: colors.primary,
+      fontSize: metrics.font.body,
+      fontWeight: '600',
+      textAlign: 'center',
+    },
+    link: {
+      color: colors.primary,
+      fontSize: metrics.font.body,
+      fontWeight: '600',
+      textAlign: 'center',
+      textDecorationLine: 'underline',
+    },
+    modalBackdrop: {
+      flex: 1,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: 'rgba(0, 0, 0, 0.6)',
+      padding: metrics.spacing.lg,
+    },
+    modalCard: {
+      width: '100%',
+      alignItems: 'center',
+      backgroundColor: colors.surface,
+      borderRadius: metrics.radius.lg,
+      padding: metrics.spacing.lg,
+      gap: metrics.spacing.md,
+    },
+    modalTitle: {
+      color: colors.primaryDark,
+      fontSize: metrics.font.heading,
+      fontWeight: '700',
+      textAlign: 'center',
+    },
+    modalText: {
+      color: colors.muted,
+      fontSize: metrics.font.body,
+      lineHeight: scale(20),
+      textAlign: 'center',
+    },
+    cancelText: {
+      color: colors.primary,
+      fontSize: metrics.font.body,
+      fontWeight: '600',
+      textDecorationLine: 'underline',
+    },
+  });
+}

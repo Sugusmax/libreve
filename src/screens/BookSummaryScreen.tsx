@@ -13,7 +13,6 @@ import {
   type NativeScrollEvent,
   type NativeSyntheticEvent,
 } from 'react-native';
-import { StatusBar } from 'expo-status-bar';
 import * as Clipboard from 'expo-clipboard';
 import ApiKeyField from '../components/ApiKeyField';
 import ApiKeyHelp from '../components/ApiKeyHelp';
@@ -55,13 +54,6 @@ import {
   saveSimilarBooks,
 } from '../services/library';
 import {
-  getSystemScheme,
-  loadTheme,
-  saveTheme,
-  subscribeToSystemScheme,
-  type ColorScheme,
-} from '../services/theme';
-import {
   DEFAULT_SUMMARY_STYLE,
   SUMMARY_FONT_IDS,
   SUMMARY_FONTS,
@@ -71,7 +63,8 @@ import {
   type SummaryFontId,
   type SummaryStyleSettings,
 } from '../services/summaryStyle';
-import { resolveColors, type Palette, type ThemeMode } from '../theme/colors';
+import { useAppTheme } from '../theme/AppTheme';
+import { type Palette, type ThemeMode } from '../theme/colors';
 import { metrics, scale } from '../theme/metrics';
 
 type BookSummaryScreenProps = {
@@ -157,8 +150,7 @@ export default function BookSummaryScreen({
   const [newProviderId, setNewProviderId] = useState<ProviderId>('gemini');
   const [newKey, setNewKey] = useState('');
   const [keyStatus, setKeyStatus] = useState('');
-  const [themeMode, setThemeMode] = useState<ThemeMode>('light');
-  const [systemScheme, setSystemScheme] = useState<ColorScheme>(getSystemScheme);
+  const { colors, themeMode, setThemeMode } = useAppTheme();
   const [readAloud, setReadAloud] = useState(false);
   const [voiceSettings, setVoiceSettings] = useState<ReadAloudSettings>(
     DEFAULT_READ_ALOUD_SETTINGS,
@@ -185,14 +177,6 @@ export default function BookSummaryScreen({
   useEffect(() => {
     let active = true;
 
-    void loadTheme()
-      .then((mode) => {
-        if (active) {
-          setThemeMode(mode);
-        }
-      })
-      .catch(() => undefined);
-
     void loadReadAloud()
       .then((enabled) => {
         if (active) {
@@ -217,11 +201,8 @@ export default function BookSummaryScreen({
       })
       .catch(() => undefined);
 
-    const unsubscribe = subscribeToSystemScheme(setSystemScheme);
-
     return () => {
       active = false;
-      unsubscribe();
       speechTokenRef.current += 1;
       void stopReading();
     };
@@ -690,9 +671,6 @@ export default function BookSummaryScreen({
     isRestoring || isLoading || (isLoadingSimilar && similarBooks.length === 0);
   const largeCover =
     book.coverLargeUrl ?? upgradeCoverUrl(book.coverUrl) ?? book.coverUrl;
-  const activeScheme: ColorScheme =
-    themeMode === 'auto' ? systemScheme : themeMode;
-  const colors = useMemo(() => resolveColors(activeScheme), [activeScheme]);
   const styles = useMemo(() => createStyles(colors), [colors]);
   const summaryTextStyle = useMemo(
     () => ({
@@ -702,18 +680,6 @@ export default function BookSummaryScreen({
     }),
     [summaryStyle.font, summaryStyle.fontSize],
   );
-
-  useEffect(() => {
-    if (typeof document === 'undefined') {
-      return;
-    }
-
-    document.documentElement.style.setProperty('--libreve-bg', colors.background);
-
-    return () => {
-      document.documentElement.style.removeProperty('--libreve-bg');
-    };
-  }, [colors.background]);
 
   const stopChapterReading = () => {
     speechTokenRef.current += 1;
@@ -860,7 +826,6 @@ export default function BookSummaryScreen({
 
   return (
     <View style={styles.container}>
-      <StatusBar style={activeScheme === 'dark' ? 'light' : 'dark'} />
       <ScrollView
         ref={scrollRef}
         style={styles.scrollView}
@@ -1295,10 +1260,7 @@ export default function BookSummaryScreen({
                         styles.providerChip,
                         selected ? styles.providerChipSelected : null,
                       ]}
-                      onPress={() => {
-                        setThemeMode(mode);
-                        void saveTheme(mode);
-                      }}
+                      onPress={() => setThemeMode(mode)}
                       accessibilityRole="button"
                       accessibilityState={{ selected }}
                       accessibilityLabel={`Tema ${THEME_META[mode].label}`}

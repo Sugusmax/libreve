@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import {
   ScrollView,
   StyleSheet,
@@ -6,7 +6,6 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { StatusBar } from 'expo-status-bar';
 import PrimaryButton from '../components/PrimaryButton';
 import {
   interests,
@@ -14,7 +13,8 @@ import {
   MIN_INTERESTS,
 } from '../data/interests';
 import { saveInterests } from '../services/preferences';
-import { colors } from '../theme/colors';
+import { useAppTheme } from '../theme/AppTheme';
+import { type Palette } from '../theme/colors';
 import { metrics, scale } from '../theme/metrics';
 
 type InterestsScreenProps = {
@@ -26,6 +26,8 @@ export default function InterestsScreen({
   initialInterests,
   onComplete,
 }: InterestsScreenProps) {
+  const { colors } = useAppTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
   const [selected, setSelected] = useState<string[]>(initialInterests);
   const [status, setStatus] = useState('');
 
@@ -61,7 +63,6 @@ export default function InterestsScreen({
 
   return (
     <View style={styles.container}>
-      <StatusBar style="dark" />
       <ScrollView contentContainerStyle={styles.content}>
         <View style={styles.card}>
           <Text style={styles.eyebrow}>PERSONALIZA TUS LECTURAS</Text>
@@ -102,7 +103,7 @@ export default function InterestsScreen({
             {MAX_INTERESTS}
           </Text>
           <Text style={styles.status}>{status}</Text>
-          <PrimaryButton
+          <PrimaryButton colors={colors}
             label="Guardar intereses"
             onPress={() => void handleSave()}
             disabled={selected.length < MIN_INTERESTS}
@@ -113,92 +114,94 @@ export default function InterestsScreen({
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: colors.background,
-  },
-  content: {
-    flexGrow: 1,
-    justifyContent: 'center',
-    width: '100%',
-    paddingHorizontal: '6%',
-    paddingVertical: metrics.spacing.xl,
-  },
-  card: {
-    width: '100%',
-    alignItems: 'center',
-    backgroundColor: colors.surface,
-    borderRadius: metrics.radius.lg,
-    padding: metrics.spacing.lg,
-    gap: metrics.spacing.md,
-    shadowColor: colors.primaryDark,
-    shadowOpacity: 0.08,
-    shadowRadius: metrics.radius.md,
-    shadowOffset: { width: 0, height: scale(6) },
-    elevation: 3,
-  },
-  eyebrow: {
-    color: colors.accent,
-    fontSize: metrics.font.eyebrow,
-    fontWeight: '700',
-    letterSpacing: scale(1.4),
-    textAlign: 'center',
-  },
-  title: {
-    color: colors.primaryDark,
-    fontSize: metrics.font.title,
-    fontWeight: '700',
-    textAlign: 'center',
-  },
-  description: {
-    color: colors.muted,
-    fontSize: metrics.font.body,
-    lineHeight: scale(20),
-    textAlign: 'center',
-  },
-  chips: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'center',
-    gap: metrics.spacing.xs,
-  },
-  chip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderWidth: scale(1),
-    borderColor: colors.border,
-    borderRadius: metrics.radius.pill,
-    backgroundColor: colors.background,
-    paddingHorizontal: metrics.spacing.sm,
-    paddingVertical: metrics.spacing.xs,
-    gap: metrics.spacing.xs,
-  },
-  chipSelected: {
-    borderColor: colors.primary,
-    backgroundColor: colors.primary,
-  },
-  emoji: {
-    fontSize: metrics.font.body,
-  },
-  chipLabel: {
-    color: colors.text,
-    fontSize: metrics.font.body,
-    fontWeight: '600',
-    textAlign: 'center',
-  },
-  chipLabelSelected: {
-    color: colors.surface,
-  },
-  counter: {
-    color: colors.muted,
-    fontSize: metrics.font.body,
-    textAlign: 'center',
-  },
-  status: {
-    color: colors.primary,
-    fontSize: metrics.font.body,
-    fontWeight: '600',
-    textAlign: 'center',
-  },
-});
+function createStyles(colors: Palette) {
+  return StyleSheet.create({
+    container: {
+      flex: 1,
+      backgroundColor: colors.background,
+    },
+    content: {
+      flexGrow: 1,
+      justifyContent: 'center',
+      width: '100%',
+      paddingHorizontal: '6%',
+      paddingVertical: metrics.spacing.xl,
+    },
+    card: {
+      width: '100%',
+      alignItems: 'center',
+      backgroundColor: colors.surface,
+      borderRadius: metrics.radius.lg,
+      padding: metrics.spacing.lg,
+      gap: metrics.spacing.md,
+      shadowColor: colors.primaryDark,
+      shadowOpacity: 0.08,
+      shadowRadius: metrics.radius.md,
+      shadowOffset: { width: 0, height: scale(6) },
+      elevation: 3,
+    },
+    eyebrow: {
+      color: colors.accent,
+      fontSize: metrics.font.eyebrow,
+      fontWeight: '700',
+      letterSpacing: scale(1.4),
+      textAlign: 'center',
+    },
+    title: {
+      color: colors.primaryDark,
+      fontSize: metrics.font.title,
+      fontWeight: '700',
+      textAlign: 'center',
+    },
+    description: {
+      color: colors.muted,
+      fontSize: metrics.font.body,
+      lineHeight: scale(20),
+      textAlign: 'center',
+    },
+    chips: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      justifyContent: 'center',
+      gap: metrics.spacing.xs,
+    },
+    chip: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      borderWidth: scale(1),
+      borderColor: colors.border,
+      borderRadius: metrics.radius.pill,
+      backgroundColor: colors.background,
+      paddingHorizontal: metrics.spacing.sm,
+      paddingVertical: metrics.spacing.xs,
+      gap: metrics.spacing.xs,
+    },
+    chipSelected: {
+      borderColor: colors.primary,
+      backgroundColor: colors.primary,
+    },
+    emoji: {
+      fontSize: metrics.font.body,
+    },
+    chipLabel: {
+      color: colors.text,
+      fontSize: metrics.font.body,
+      fontWeight: '600',
+      textAlign: 'center',
+    },
+    chipLabelSelected: {
+      color: colors.surface,
+    },
+    counter: {
+      color: colors.muted,
+      fontSize: metrics.font.body,
+      textAlign: 'center',
+    },
+    status: {
+      color: colors.primary,
+      fontSize: metrics.font.body,
+      fontWeight: '600',
+      textAlign: 'center',
+    },
+  });
+}

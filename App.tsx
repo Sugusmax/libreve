@@ -20,7 +20,7 @@ import {
   saveSuggestions,
 } from './src/services/library';
 import { hasCompletedInterests, loadInterests } from './src/services/preferences';
-import { colors } from './src/theme/colors';
+import { ThemeProvider, useAppTheme } from './src/theme/AppTheme';
 
 type Route =
   | { name: 'home' }
@@ -85,7 +85,9 @@ function getBackLabel(previous: Route | undefined): string {
   }
 }
 
-export default function App() {
+function AppContent() {
+  const { colors, ready: themeReady } = useAppTheme();
+
   // Pila de navegación: «atrás» siempre vuelve a la ruta que empujó la actual.
   const [stack, setStack] = useState<Route[]>([{ name: 'home' }]);
   const [apiKey, setApiKey] = useState('');
@@ -229,9 +231,9 @@ export default function App() {
     return () => subscription.remove();
   }, []);
 
-  if (!isReady) {
+  if (!isReady || !themeReady) {
     return (
-      <View style={styles.loading}>
+      <View style={[styles.loading, { backgroundColor: colors.background }]}>
         <ActivityIndicator color={colors.primary} />
       </View>
     );
@@ -344,11 +346,18 @@ export default function App() {
   );
 }
 
+export default function App() {
+  return (
+    <ThemeProvider>
+      <AppContent />
+    </ThemeProvider>
+  );
+}
+
 const styles = StyleSheet.create({
   loading: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: colors.background,
   },
 });

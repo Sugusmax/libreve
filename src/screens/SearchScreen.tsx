@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import {
   Image,
   Linking,
@@ -9,7 +9,6 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { StatusBar } from 'expo-status-bar';
 import BackLink from '../components/BackLink';
 import PrimaryButton from '../components/PrimaryButton';
 import {
@@ -18,7 +17,8 @@ import {
   searchBooks,
   type SearchedBook,
 } from '../services/bookSearch';
-import { colors } from '../theme/colors';
+import { useAppTheme } from '../theme/AppTheme';
+import { type Palette } from '../theme/colors';
 import { metrics, scale } from '../theme/metrics';
 
 type SearchScreenProps = {
@@ -32,6 +32,8 @@ export default function SearchScreen({
   onOpenLibrary,
   onSelectBook,
 }: SearchScreenProps) {
+  const { colors } = useAppTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
   const [query, setQuery] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
   const [results, setResults] = useState<SearchedBook[]>([]);
@@ -112,7 +114,6 @@ export default function SearchScreen({
 
   return (
     <View style={styles.container}>
-      <StatusBar style="dark" />
       <ScrollView
         contentContainerStyle={styles.content}
         keyboardShouldPersistTaps="handled"
@@ -138,7 +139,7 @@ export default function SearchScreen({
             editable={!isLoading}
             accessibilityLabel="Buscar libros"
           />
-          <PrimaryButton
+          <PrimaryButton colors={colors}
             label={isLoading ? 'Buscando…' : 'Buscar'}
             onPress={() => void handleSearch()}
             disabled={isLoading}
@@ -171,7 +172,7 @@ export default function SearchScreen({
           ))}
 
           {results.length > 0 && nextOffset < total ? (
-            <PrimaryButton
+            <PrimaryButton colors={colors}
               label={
                 isLoadingMore
                   ? 'Cargando más…'
@@ -197,116 +198,118 @@ export default function SearchScreen({
           <TouchableOpacity onPress={onOpenLibrary} accessibilityRole="button">
             <Text style={styles.link}>Mi biblioteca</Text>
           </TouchableOpacity>
-          <BackLink label="Volver" onPress={onBack} />
+          <BackLink colors={colors} label="Volver" onPress={onBack} />
         </View>
       </ScrollView>
     </View>
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: colors.background,
-  },
-  content: {
-    flexGrow: 1,
-    width: '100%',
-    paddingHorizontal: '6%',
-    paddingVertical: metrics.spacing.xl,
-  },
-  card: {
-    width: '100%',
-    alignItems: 'center',
-    backgroundColor: colors.surface,
-    borderRadius: metrics.radius.lg,
-    padding: metrics.spacing.lg,
-    gap: metrics.spacing.md,
-    shadowColor: colors.primaryDark,
-    shadowOpacity: 0.08,
-    shadowRadius: metrics.radius.md,
-    shadowOffset: { width: 0, height: scale(6) },
-    elevation: 3,
-  },
-  eyebrow: {
-    color: colors.accent,
-    fontSize: metrics.font.eyebrow,
-    fontWeight: '700',
-    letterSpacing: scale(1.4),
-    textAlign: 'center',
-  },
-  title: {
-    color: colors.primaryDark,
-    fontSize: metrics.font.title,
-    fontWeight: '700',
-    textAlign: 'center',
-  },
-  description: {
-    color: colors.muted,
-    fontSize: metrics.font.body,
-    lineHeight: scale(20),
-    textAlign: 'center',
-  },
-  input: {
-    alignSelf: 'stretch',
-    borderWidth: scale(1),
-    borderColor: colors.border,
-    borderRadius: metrics.radius.sm,
-    backgroundColor: colors.background,
-    paddingHorizontal: metrics.spacing.sm,
-    paddingVertical: metrics.spacing.sm,
-    color: colors.text,
-    fontSize: metrics.font.input,
-  },
-  status: {
-    color: colors.primary,
-    fontSize: metrics.font.body,
-    fontWeight: '600',
-    textAlign: 'center',
-  },
-  bookRow: {
-    alignSelf: 'stretch',
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: metrics.spacing.sm,
-    paddingBottom: metrics.spacing.sm,
-    borderBottomWidth: scale(1),
-    borderBottomColor: colors.border,
-  },
-  cover: {
-    width: scale(64),
-    height: scale(96),
-    borderRadius: metrics.radius.sm,
-    backgroundColor: colors.hint,
-  },
-  bookInfo: {
-    flex: 1,
-    gap: metrics.spacing.xs,
-  },
-  bookTitle: {
-    color: colors.text,
-    fontSize: metrics.font.body,
-    fontWeight: '700',
-  },
-  bookAuthor: {
-    color: colors.accent,
-    fontSize: metrics.font.body,
-    fontWeight: '600',
-  },
-  bookMeta: {
-    color: colors.muted,
-    fontSize: metrics.font.body,
-  },
-  hint: {
-    color: colors.muted,
-    fontSize: metrics.font.body,
-    textAlign: 'center',
-  },
-  link: {
-    color: colors.primary,
-    fontSize: metrics.font.body,
-    fontWeight: '600',
-    textAlign: 'center',
-    textDecorationLine: 'underline',
-  },
-});
+function createStyles(colors: Palette) {
+  return StyleSheet.create({
+    container: {
+      flex: 1,
+      backgroundColor: colors.background,
+    },
+    content: {
+      flexGrow: 1,
+      width: '100%',
+      paddingHorizontal: '6%',
+      paddingVertical: metrics.spacing.xl,
+    },
+    card: {
+      width: '100%',
+      alignItems: 'center',
+      backgroundColor: colors.surface,
+      borderRadius: metrics.radius.lg,
+      padding: metrics.spacing.lg,
+      gap: metrics.spacing.md,
+      shadowColor: colors.primaryDark,
+      shadowOpacity: 0.08,
+      shadowRadius: metrics.radius.md,
+      shadowOffset: { width: 0, height: scale(6) },
+      elevation: 3,
+    },
+    eyebrow: {
+      color: colors.accent,
+      fontSize: metrics.font.eyebrow,
+      fontWeight: '700',
+      letterSpacing: scale(1.4),
+      textAlign: 'center',
+    },
+    title: {
+      color: colors.primaryDark,
+      fontSize: metrics.font.title,
+      fontWeight: '700',
+      textAlign: 'center',
+    },
+    description: {
+      color: colors.muted,
+      fontSize: metrics.font.body,
+      lineHeight: scale(20),
+      textAlign: 'center',
+    },
+    input: {
+      alignSelf: 'stretch',
+      borderWidth: scale(1),
+      borderColor: colors.border,
+      borderRadius: metrics.radius.sm,
+      backgroundColor: colors.background,
+      paddingHorizontal: metrics.spacing.sm,
+      paddingVertical: metrics.spacing.sm,
+      color: colors.text,
+      fontSize: metrics.font.input,
+    },
+    status: {
+      color: colors.primary,
+      fontSize: metrics.font.body,
+      fontWeight: '600',
+      textAlign: 'center',
+    },
+    bookRow: {
+      alignSelf: 'stretch',
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: metrics.spacing.sm,
+      paddingBottom: metrics.spacing.sm,
+      borderBottomWidth: scale(1),
+      borderBottomColor: colors.border,
+    },
+    cover: {
+      width: scale(64),
+      height: scale(96),
+      borderRadius: metrics.radius.sm,
+      backgroundColor: colors.hint,
+    },
+    bookInfo: {
+      flex: 1,
+      gap: metrics.spacing.xs,
+    },
+    bookTitle: {
+      color: colors.text,
+      fontSize: metrics.font.body,
+      fontWeight: '700',
+    },
+    bookAuthor: {
+      color: colors.accent,
+      fontSize: metrics.font.body,
+      fontWeight: '600',
+    },
+    bookMeta: {
+      color: colors.muted,
+      fontSize: metrics.font.body,
+    },
+    hint: {
+      color: colors.muted,
+      fontSize: metrics.font.body,
+      textAlign: 'center',
+    },
+    link: {
+      color: colors.primary,
+      fontSize: metrics.font.body,
+      fontWeight: '600',
+      textAlign: 'center',
+      textDecorationLine: 'underline',
+    },
+  });
+}

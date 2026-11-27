@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   ScrollView,
   StyleSheet,
@@ -6,13 +6,13 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { StatusBar } from 'expo-status-bar';
 import * as Clipboard from 'expo-clipboard';
 import ApiKeyField from '../components/ApiKeyField';
 import ApiKeyHelp from '../components/ApiKeyHelp';
 import PrimaryButton from '../components/PrimaryButton';
 import { getProvider, providers, type ProviderId } from '../data/providers';
-import { colors } from '../theme/colors';
+import { useAppTheme } from '../theme/AppTheme';
+import { type Palette } from '../theme/colors';
 import { metrics, scale } from '../theme/metrics';
 import { loadApiKey, loadProviderId, saveApiKey } from '../services/apiKey';
 
@@ -25,6 +25,8 @@ export default function HomeScreen({
   initialApiKey,
   onKeyReady,
 }: HomeScreenProps) {
+  const { colors } = useAppTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
   const [providerId, setProviderId] = useState<ProviderId>('gemini');
   const [apiKey, setApiKey] = useState(initialApiKey);
   const [status, setStatus] = useState('');
@@ -101,7 +103,6 @@ export default function HomeScreen({
 
   return (
     <View style={styles.container}>
-      <StatusBar style="dark" />
       <ScrollView
         contentContainerStyle={styles.content}
         keyboardShouldPersistTaps="handled"
@@ -155,13 +156,13 @@ export default function HomeScreen({
             </View>
           </View>
 
-          <ApiKeyHelp provider={getProvider(providerId)} />
-          <ApiKeyField
+          <ApiKeyHelp colors={colors} provider={getProvider(providerId)} />
+          <ApiKeyField colors={colors}
             value={apiKey}
             onChangeText={setApiKey}
             onPaste={() => void handlePaste()}
           />
-          <PrimaryButton
+          <PrimaryButton colors={colors}
             label="Usar clave"
             onPress={() => void activateKey(apiKey)}
           />
@@ -176,116 +177,118 @@ export default function HomeScreen({
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: colors.background,
-  },
-  content: {
-    flexGrow: 1,
-    justifyContent: 'center',
-    width: '100%',
-    maxWidth: '100%',
-    paddingHorizontal: '6%',
-    paddingVertical: metrics.spacing.xl,
-    gap: metrics.spacing.lg,
-  },
-  hero: {
-    width: '100%',
-    alignItems: 'center',
-    gap: metrics.spacing.xs,
-  },
-  eyebrow: {
-    color: colors.accent,
-    fontSize: metrics.font.eyebrow,
-    fontWeight: '700',
-    letterSpacing: scale(1.4),
-    textAlign: 'center',
-  },
-  title: {
-    color: colors.primaryDark,
-    fontSize: metrics.font.title,
-    fontWeight: '700',
-    textAlign: 'center',
-  },
-  subtitle: {
-    color: colors.muted,
-    fontSize: metrics.font.subtitle,
-    lineHeight: scale(22),
-    maxWidth: '92%',
-    textAlign: 'center',
-  },
-  card: {
-    width: '100%',
-    alignItems: 'center',
-    backgroundColor: colors.surface,
-    borderRadius: metrics.radius.lg,
-    padding: metrics.spacing.lg,
-    gap: metrics.spacing.md,
-    shadowColor: colors.primaryDark,
-    shadowOpacity: 0.08,
-    shadowRadius: metrics.radius.md,
-    shadowOffset: { width: 0, height: scale(6) },
-    elevation: 3,
-  },
-  cardTitle: {
-    color: colors.text,
-    fontSize: metrics.font.heading,
-    fontWeight: '700',
-    textAlign: 'center',
-  },
-  cardDescription: {
-    color: colors.muted,
-    fontSize: metrics.font.body,
-    lineHeight: scale(20),
-    textAlign: 'center',
-  },
-  providerSection: {
-    width: '100%',
-    alignItems: 'center',
-    gap: metrics.spacing.xs,
-  },
-  providerLabel: {
-    color: colors.primary,
-    fontSize: metrics.font.body,
-    fontWeight: '700',
-    textAlign: 'center',
-  },
-  providers: {
-    width: '100%',
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'center',
-    gap: metrics.spacing.xs,
-  },
-  providerChip: {
-    borderWidth: scale(1),
-    borderColor: colors.border,
-    borderRadius: metrics.radius.pill,
-    paddingHorizontal: metrics.spacing.sm,
-    paddingVertical: metrics.spacing.xs,
-  },
-  providerChipSelected: {
-    backgroundColor: colors.primary,
-    borderColor: colors.primary,
-  },
-  providerChipText: {
-    color: colors.muted,
-    fontSize: metrics.font.body,
-    fontWeight: '600',
-  },
-  providerChipTextSelected: {
-    color: colors.surface,
-  },
-  status: {
-    color: colors.primary,
-    fontSize: metrics.font.body,
-    fontWeight: '600',
-    textAlign: 'center',
-  },
-  note: {
-    color: colors.muted,
-    fontSize: metrics.font.body,
-    textAlign: 'center',
-  },
-});
+function createStyles(colors: Palette) {
+  return StyleSheet.create({
+    container: {
+      flex: 1,
+      backgroundColor: colors.background,
+    },
+    content: {
+      flexGrow: 1,
+      justifyContent: 'center',
+      width: '100%',
+      maxWidth: '100%',
+      paddingHorizontal: '6%',
+      paddingVertical: metrics.spacing.xl,
+      gap: metrics.spacing.lg,
+    },
+    hero: {
+      width: '100%',
+      alignItems: 'center',
+      gap: metrics.spacing.xs,
+    },
+    eyebrow: {
+      color: colors.accent,
+      fontSize: metrics.font.eyebrow,
+      fontWeight: '700',
+      letterSpacing: scale(1.4),
+      textAlign: 'center',
+    },
+    title: {
+      color: colors.primaryDark,
+      fontSize: metrics.font.title,
+      fontWeight: '700',
+      textAlign: 'center',
+    },
+    subtitle: {
+      color: colors.muted,
+      fontSize: metrics.font.subtitle,
+      lineHeight: scale(22),
+      maxWidth: '92%',
+      textAlign: 'center',
+    },
+    card: {
+      width: '100%',
+      alignItems: 'center',
+      backgroundColor: colors.surface,
+      borderRadius: metrics.radius.lg,
+      padding: metrics.spacing.lg,
+      gap: metrics.spacing.md,
+      shadowColor: colors.primaryDark,
+      shadowOpacity: 0.08,
+      shadowRadius: metrics.radius.md,
+      shadowOffset: { width: 0, height: scale(6) },
+      elevation: 3,
+    },
+    cardTitle: {
+      color: colors.text,
+      fontSize: metrics.font.heading,
+      fontWeight: '700',
+      textAlign: 'center',
+    },
+    cardDescription: {
+      color: colors.muted,
+      fontSize: metrics.font.body,
+      lineHeight: scale(20),
+      textAlign: 'center',
+    },
+    providerSection: {
+      width: '100%',
+      alignItems: 'center',
+      gap: metrics.spacing.xs,
+    },
+    providerLabel: {
+      color: colors.primary,
+      fontSize: metrics.font.body,
+      fontWeight: '700',
+      textAlign: 'center',
+    },
+    providers: {
+      width: '100%',
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      justifyContent: 'center',
+      gap: metrics.spacing.xs,
+    },
+    providerChip: {
+      borderWidth: scale(1),
+      borderColor: colors.border,
+      borderRadius: metrics.radius.pill,
+      paddingHorizontal: metrics.spacing.sm,
+      paddingVertical: metrics.spacing.xs,
+    },
+    providerChipSelected: {
+      backgroundColor: colors.primary,
+      borderColor: colors.primary,
+    },
+    providerChipText: {
+      color: colors.muted,
+      fontSize: metrics.font.body,
+      fontWeight: '600',
+    },
+    providerChipTextSelected: {
+      color: colors.surface,
+    },
+    status: {
+      color: colors.primary,
+      fontSize: metrics.font.body,
+      fontWeight: '600',
+      textAlign: 'center',
+    },
+    note: {
+      color: colors.muted,
+      fontSize: metrics.font.body,
+      textAlign: 'center',
+    },
+  });
+}
