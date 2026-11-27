@@ -163,8 +163,7 @@ export default function BookSummaryScreen({
   const [voiceSettings, setVoiceSettings] = useState<ReadAloudSettings>(
     DEFAULT_READ_ALOUD_SETTINGS,
   );
-  const [voiceSettingsVisible, setVoiceSettingsVisible] = useState(false);
-  const [fontSettingsVisible, setFontSettingsVisible] = useState(false);
+  const [settingsVisible, setSettingsVisible] = useState(false);
   const [summaryStyle, setSummaryStyle] = useState<SummaryStyleSettings>(
     DEFAULT_SUMMARY_STYLE,
   );
@@ -254,13 +253,8 @@ export default function BookSummaryScreen({
           return true;
         }
 
-        if (fontSettingsVisible) {
-          setFontSettingsVisible(false);
-          return true;
-        }
-
-        if (voiceSettingsVisible) {
-          setVoiceSettingsVisible(false);
+        if (settingsVisible) {
+          setSettingsVisible(false);
           return true;
         }
 
@@ -274,8 +268,7 @@ export default function BookSummaryScreen({
     addingKey,
     menuChapter,
     coverVisible,
-    fontSettingsVisible,
-    voiceSettingsVisible,
+    settingsVisible,
   ]);
 
   const handleScroll = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
@@ -699,8 +692,6 @@ export default function BookSummaryScreen({
     book.coverLargeUrl ?? upgradeCoverUrl(book.coverUrl) ?? book.coverUrl;
   const activeScheme: ColorScheme =
     themeMode === 'auto' ? systemScheme : themeMode;
-  const nextThemeMode =
-    THEME_MODES[(THEME_MODES.indexOf(themeMode) + 1) % THEME_MODES.length];
   const colors = useMemo(() => resolveColors(activeScheme), [activeScheme]);
   const styles = useMemo(() => createStyles(colors), [colors]);
   const summaryTextStyle = useMemo(
@@ -796,6 +787,11 @@ export default function BookSummaryScreen({
     void saveSummaryStyle(DEFAULT_SUMMARY_STYLE);
   };
 
+  const resetAllSettings = () => {
+    resetVoiceSettings();
+    resetSummaryStyle();
+  };
+
   const renderVoiceSettingRow = (
     key: keyof ReadAloudSettings,
     label: string,
@@ -874,54 +870,7 @@ export default function BookSummaryScreen({
       >
         <View style={styles.card}>
           <View style={styles.cardHeader}>
-            <TouchableOpacity
-              style={[
-                styles.readAloudButton,
-                !readAloud ? styles.readAloudButtonOff : null,
-              ]}
-              hitSlop={scale(8)}
-              onPress={() => setVoiceSettingsVisible(true)}
-              accessibilityRole="button"
-              accessibilityLabel="Configurar lectura en voz alta"
-            >
-              <Text
-                style={[
-                  styles.readAloudIcon,
-                  readAloud ? styles.readAloudIconActive : null,
-                ]}
-              >
-                🔊
-              </Text>
-              {!readAloud ? (
-                <View
-                  pointerEvents="none"
-                  style={styles.readAloudSlash}
-                />
-              ) : null}
-            </TouchableOpacity>
             <Text style={styles.eyebrow}>RESUMEN POR CAPÍTULOS</Text>
-            <TouchableOpacity
-              style={styles.fontButton}
-              hitSlop={scale(8)}
-              onPress={() => setFontSettingsVisible(true)}
-              accessibilityRole="button"
-              accessibilityLabel="Configurar fuente del resumen"
-            >
-              <Text style={styles.fontButtonText}>Aa</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.themeButton}
-              hitSlop={scale(8)}
-              onPress={() => {
-                setThemeMode(nextThemeMode);
-                void saveTheme(nextThemeMode);
-              }}
-              accessibilityRole="button"
-              accessibilityLabel={`Tema ${THEME_META[themeMode].label}`}
-              accessibilityHint={`Pulsa para cambiar a ${THEME_META[nextThemeMode].label}`}
-            >
-              <Text style={styles.themeIcon}>{THEME_META[themeMode].icon}</Text>
-            </TouchableOpacity>
           </View>
 
           <View style={styles.bookHeader}>
@@ -1101,6 +1050,16 @@ export default function BookSummaryScreen({
           ) : null}
         </View>
       </ScrollView>
+
+      <TouchableOpacity
+        style={styles.settingsButton}
+        hitSlop={scale(8)}
+        onPress={() => setSettingsVisible(true)}
+        accessibilityRole="button"
+        accessibilityLabel="Abrir ajustes del resumen"
+      >
+        <Text style={styles.settingsButtonIcon}>⚙</Text>
+      </TouchableOpacity>
 
       {book.coverUrl ? (
         <Modal
@@ -1304,168 +1263,180 @@ export default function BookSummaryScreen({
       </Modal>
 
       <Modal
-        visible={voiceSettingsVisible}
+        visible={settingsVisible}
         transparent
         animationType="fade"
-        onRequestClose={() => setVoiceSettingsVisible(false)}
+        onRequestClose={() => setSettingsVisible(false)}
       >
         <TouchableOpacity
           style={styles.modalBackdrop}
           activeOpacity={1}
-          onPress={() => setVoiceSettingsVisible(false)}
+          onPress={() => setSettingsVisible(false)}
         >
           <TouchableOpacity
-            style={[styles.menu, styles.voiceMenu]}
+            style={[styles.menu, styles.settingsMenu]}
             activeOpacity={1}
           >
-            <Text style={styles.menuTitle}>Lectura en voz alta</Text>
-            <TouchableOpacity
-              style={[
-                styles.voiceToggle,
-                readAloud ? styles.voiceToggleOn : null,
-              ]}
-              onPress={toggleReadAloud}
-              accessibilityRole="button"
-              accessibilityState={{ checked: readAloud }}
-              accessibilityLabel={
-                readAloud
-                  ? 'Desactivar lectura en voz alta'
-                  : 'Activar lectura en voz alta'
-              }
+            <ScrollView
+              style={styles.settingsScroll}
+              contentContainerStyle={styles.settingsContent}
             >
-              <Text
-                style={[
-                  styles.voiceToggleText,
-                  readAloud ? styles.voiceToggleTextOn : null,
-                ]}
-              >
-                {readAloud ? 'Activada' : 'Desactivada'}
+              <Text style={styles.menuTitle}>Ajustes del resumen</Text>
+              <Text style={styles.menuSubtitle}>
+                Tema, voz y tipografía en un solo lugar.
               </Text>
-            </TouchableOpacity>
-            {renderVoiceSettingRow(
-              'rate',
-              'Velocidad',
-              `${voiceSettings.rate.toFixed(1)}×`,
-            )}
-            {renderVoiceSettingRow(
-              'pitch',
-              'Tono',
-              `${voiceSettings.pitch.toFixed(1)}×`,
-            )}
-            {renderVoiceSettingRow(
-              'commaPauseMs',
-              'Pausa coma (ms)',
-              `${voiceSettings.commaPauseMs}`,
-            )}
-            {renderVoiceSettingRow(
-              'periodPauseMs',
-              'Pausa punto (ms)',
-              `${voiceSettings.periodPauseMs}`,
-            )}
-            <TouchableOpacity
-              onPress={resetVoiceSettings}
-              accessibilityRole="button"
-            >
-              <Text style={styles.devLink}>Restablecer valores</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              onPress={() => setVoiceSettingsVisible(false)}
-              accessibilityRole="button"
-            >
-              <Text style={styles.link}>Cerrar</Text>
-            </TouchableOpacity>
-          </TouchableOpacity>
-        </TouchableOpacity>
-      </Modal>
 
-      <Modal
-        visible={fontSettingsVisible}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setFontSettingsVisible(false)}
-      >
-        <TouchableOpacity
-          style={styles.modalBackdrop}
-          activeOpacity={1}
-          onPress={() => setFontSettingsVisible(false)}
-        >
-          <TouchableOpacity
-            style={[styles.menu, styles.voiceMenu]}
-            activeOpacity={1}
-          >
-            <Text style={styles.menuTitle}>Fuente del resumen</Text>
-            <Text style={styles.menuSubtitle}>
-              Elige la tipografía y el tamaño del texto de los capítulos.
-            </Text>
+              <Text style={styles.providerLabel}>Tema</Text>
+              <View style={styles.providerChips}>
+                {THEME_MODES.map((mode) => {
+                  const selected = themeMode === mode;
 
-            <Text style={styles.providerLabel}>Tipografía</Text>
-            <View style={styles.providerChips}>
-              {SUMMARY_FONT_IDS.map((id) => {
-                const selected = summaryStyle.font === id;
-
-                return (
-                  <TouchableOpacity
-                    key={id}
-                    style={[
-                      styles.providerChip,
-                      selected ? styles.providerChipSelected : null,
-                    ]}
-                    onPress={() => selectSummaryFont(id)}
-                    accessibilityRole="button"
-                    accessibilityState={{ selected }}
-                  >
-                    <Text
+                  return (
+                    <TouchableOpacity
+                      key={mode}
                       style={[
-                        styles.providerChipText,
-                        selected ? styles.providerChipTextSelected : null,
+                        styles.providerChip,
+                        selected ? styles.providerChipSelected : null,
                       ]}
+                      onPress={() => {
+                        setThemeMode(mode);
+                        void saveTheme(mode);
+                      }}
+                      accessibilityRole="button"
+                      accessibilityState={{ selected }}
+                      accessibilityLabel={`Tema ${THEME_META[mode].label}`}
                     >
-                      {SUMMARY_FONTS[id].label}
-                    </Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
-
-            <View style={styles.voiceSettingRow}>
-              <Text style={styles.voiceSettingLabel}>Tamaño</Text>
-              <View style={styles.voiceStepper}>
-                <TouchableOpacity
-                  style={styles.stepButton}
-                  onPress={() => updateSummaryFontSize(-1)}
-                  accessibilityRole="button"
-                  accessibilityLabel="Reducir tamaño del resumen"
-                >
-                  <Text style={styles.stepText}>−</Text>
-                </TouchableOpacity>
-                <Text style={styles.voiceSettingValue}>
-                  {summaryStyle.fontSize} px
-                </Text>
-                <TouchableOpacity
-                  style={styles.stepButton}
-                  onPress={() => updateSummaryFontSize(1)}
-                  accessibilityRole="button"
-                  accessibilityLabel="Aumentar tamaño del resumen"
-                >
-                  <Text style={styles.stepText}>+</Text>
-                </TouchableOpacity>
+                      <Text
+                        style={[
+                          styles.providerChipText,
+                          selected ? styles.providerChipTextSelected : null,
+                        ]}
+                      >
+                        {THEME_META[mode].icon} {THEME_META[mode].label}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
               </View>
-            </View>
 
-            <View style={styles.fontPreview}>
-              <Text style={[styles.fontPreviewText, summaryTextStyle]}>
-                La lectura es más cómoda cuando el texto se adapta a ti.
-              </Text>
-            </View>
+              <View style={styles.settingsDivider} />
+
+              <Text style={styles.providerLabel}>Lectura en voz alta</Text>
+              <TouchableOpacity
+                style={[
+                  styles.voiceToggle,
+                  readAloud ? styles.voiceToggleOn : null,
+                ]}
+                onPress={toggleReadAloud}
+                accessibilityRole="button"
+                accessibilityState={{ checked: readAloud }}
+                accessibilityLabel={
+                  readAloud
+                    ? 'Desactivar lectura en voz alta'
+                    : 'Activar lectura en voz alta'
+                }
+              >
+                <Text
+                  style={[
+                    styles.voiceToggleText,
+                    readAloud ? styles.voiceToggleTextOn : null,
+                  ]}
+                >
+                  {readAloud ? 'Activada' : 'Desactivada'}
+                </Text>
+              </TouchableOpacity>
+              {renderVoiceSettingRow(
+                'rate',
+                'Velocidad',
+                `${voiceSettings.rate.toFixed(1)}×`,
+              )}
+              {renderVoiceSettingRow(
+                'pitch',
+                'Tono',
+                `${voiceSettings.pitch.toFixed(1)}×`,
+              )}
+              {renderVoiceSettingRow(
+                'commaPauseMs',
+                'Pausa coma (ms)',
+                `${voiceSettings.commaPauseMs}`,
+              )}
+              {renderVoiceSettingRow(
+                'periodPauseMs',
+                'Pausa punto (ms)',
+                `${voiceSettings.periodPauseMs}`,
+              )}
+
+              <View style={styles.settingsDivider} />
+
+              <Text style={styles.providerLabel}>Fuente del resumen</Text>
+              <View style={styles.providerChips}>
+                {SUMMARY_FONT_IDS.map((id) => {
+                  const selected = summaryStyle.font === id;
+
+                  return (
+                    <TouchableOpacity
+                      key={id}
+                      style={[
+                        styles.providerChip,
+                        selected ? styles.providerChipSelected : null,
+                      ]}
+                      onPress={() => selectSummaryFont(id)}
+                      accessibilityRole="button"
+                      accessibilityState={{ selected }}
+                    >
+                      <Text
+                        style={[
+                          styles.providerChipText,
+                          selected ? styles.providerChipTextSelected : null,
+                        ]}
+                      >
+                        {SUMMARY_FONTS[id].label}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+
+              <View style={styles.voiceSettingRow}>
+                <Text style={styles.voiceSettingLabel}>Tamaño</Text>
+                <View style={styles.voiceStepper}>
+                  <TouchableOpacity
+                    style={styles.stepButton}
+                    onPress={() => updateSummaryFontSize(-1)}
+                    accessibilityRole="button"
+                    accessibilityLabel="Reducir tamaño del resumen"
+                  >
+                    <Text style={styles.stepText}>−</Text>
+                  </TouchableOpacity>
+                  <Text style={styles.voiceSettingValue}>
+                    {summaryStyle.fontSize} px
+                  </Text>
+                  <TouchableOpacity
+                    style={styles.stepButton}
+                    onPress={() => updateSummaryFontSize(1)}
+                    accessibilityRole="button"
+                    accessibilityLabel="Aumentar tamaño del resumen"
+                  >
+                    <Text style={styles.stepText}>+</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+
+              <View style={styles.fontPreview}>
+                <Text style={[styles.fontPreviewText, summaryTextStyle]}>
+                  La lectura es más cómoda cuando el texto se adapta a ti.
+                </Text>
+              </View>
+            </ScrollView>
 
             <TouchableOpacity
-              onPress={resetSummaryStyle}
+              onPress={resetAllSettings}
               accessibilityRole="button"
             >
-              <Text style={styles.devLink}>Restablecer valores</Text>
+              <Text style={styles.devLink}>Restablecer todos los ajustes</Text>
             </TouchableOpacity>
             <TouchableOpacity
-              onPress={() => setFontSettingsVisible(false)}
+              onPress={() => setSettingsVisible(false)}
               accessibilityRole="button"
             >
               <Text style={styles.link}>Cerrar</Text>
@@ -1696,9 +1667,22 @@ function createStyles(colors: Palette) {
     modelMenu: {
       maxHeight: '92%',
     },
-    voiceMenu: {
+    settingsMenu: {
       maxHeight: '92%',
+    },
+    settingsScroll: {
+      width: '100%',
+      maxHeight: scale(560),
+    },
+    settingsContent: {
+      alignItems: 'center',
       gap: metrics.spacing.sm,
+    },
+    settingsDivider: {
+      width: '100%',
+      height: scale(1),
+      backgroundColor: colors.border,
+      marginVertical: metrics.spacing.xs,
     },
     fontPreview: {
       width: '100%',
@@ -1865,73 +1849,28 @@ function createStyles(colors: Palette) {
       justifyContent: 'center',
       minHeight: scale(32),
     },
-    readAloudButton: {
+    settingsButton: {
       position: 'absolute',
-      left: 0,
-      width: scale(32),
-      height: scale(32),
+      top: scale(12),
+      right: metrics.spacing.sm,
+      width: scale(40),
+      height: scale(40),
       alignItems: 'center',
       justifyContent: 'center',
-      borderRadius: scale(16),
+      borderRadius: scale(20),
       borderWidth: scale(1),
       borderColor: colors.border,
-      backgroundColor: colors.background,
+      backgroundColor: colors.surface,
+      shadowColor: colors.primaryDark,
+      shadowOpacity: 0.12,
+      shadowRadius: metrics.radius.sm,
+      shadowOffset: { width: 0, height: scale(2) },
+      elevation: 3,
     },
-    readAloudButtonOff: {
-      borderColor: colors.danger,
-      borderWidth: scale(2),
-    },
-    readAloudIcon: {
-      color: colors.muted,
-      fontSize: scale(17),
-      textAlign: 'center',
-    },
-    readAloudIconActive: {
+    settingsButtonIcon: {
       color: colors.primary,
-    },
-    readAloudSlash: {
-      position: 'absolute',
-      width: scale(32),
-      height: scale(3),
-      borderRadius: scale(2),
-      backgroundColor: colors.danger,
-      transform: [{ rotate: '-45deg' }],
-    },
-    fontButton: {
-      position: 'absolute',
-      right: scale(40),
-      width: scale(32),
-      height: scale(32),
-      alignItems: 'center',
-      justifyContent: 'center',
-      borderRadius: scale(16),
-      borderWidth: scale(1),
-      borderColor: colors.border,
-      backgroundColor: colors.background,
-    },
-    fontButtonText: {
-      color: colors.muted,
-      fontSize: scale(13),
-      fontWeight: '700',
-      lineHeight: scale(16),
-      textAlign: 'center',
-    },
-    themeButton: {
-      position: 'absolute',
-      right: 0,
-      width: scale(32),
-      height: scale(32),
-      alignItems: 'center',
-      justifyContent: 'center',
-      borderRadius: scale(16),
-      borderWidth: scale(1),
-      borderColor: colors.border,
-      backgroundColor: colors.background,
-    },
-    themeIcon: {
-      color: colors.muted,
-      fontSize: scale(16),
-      lineHeight: scale(18),
+      fontSize: scale(20),
+      lineHeight: scale(22),
       textAlign: 'center',
     },
   });
