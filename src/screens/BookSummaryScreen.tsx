@@ -799,8 +799,14 @@ export default function BookSummaryScreen({
                   readAloud ? styles.readAloudIconActive : null,
                 ]}
               >
-                {readAloud ? '🔊' : '🔈'}
+                🔊
               </Text>
+              {!readAloud ? (
+                <View
+                  pointerEvents="none"
+                  style={styles.readAloudSlash}
+                />
+              ) : null}
             </TouchableOpacity>
             <Text style={styles.eyebrow}>RESUMEN POR CAPÍTULOS</Text>
             <TouchableOpacity
@@ -1670,6 +1676,14 @@ function createStyles(colors: Palette) {
     },
     readAloudIconActive: {
       color: colors.primary,
+    },
+    readAloudSlash: {
+      position: 'absolute',
+      width: scale(24),
+      height: scale(1.5),
+      borderRadius: scale(1),
+      backgroundColor: colors.muted,
+      transform: [{ rotate: '-45deg' }],
     },
     themeButton: {
       position: 'absolute',
