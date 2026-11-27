@@ -35,10 +35,15 @@ import {
 } from '../services/ai';
 import { upgradeCoverUrl } from '../services/covers';
 import {
+  DEFAULT_READ_ALOUD_SETTINGS,
+  READ_ALOUD_LIMITS,
   loadReadAloud,
+  loadReadAloudSettings,
   readText,
   saveReadAloud,
+  saveReadAloudSettings,
   stopReading,
+  type ReadAloudSettings,
 } from '../services/readAloud';
 import {
   booksMatch,
@@ -145,6 +150,10 @@ export default function BookSummaryScreen({
   const [themeMode, setThemeMode] = useState<ThemeMode>('light');
   const [systemScheme, setSystemScheme] = useState<ColorScheme>(getSystemScheme);
   const [readAloud, setReadAloud] = useState(false);
+  const [voiceSettings, setVoiceSettings] = useState<ReadAloudSettings>(
+    DEFAULT_READ_ALOUD_SETTINGS,
+  );
+  const [voiceSettingsVisible, setVoiceSettingsVisible] = useState(false);
   const [speakingChapter, setSpeakingChapter] = useState<number | null>(null);
   const [highlightedChapter, setHighlightedChapter] = useState<number | null>(
     null,
@@ -175,6 +184,14 @@ export default function BookSummaryScreen({
       .then((enabled) => {
         if (active) {
           setReadAloud(enabled);
+        }
+      })
+      .catch(() => undefined);
+
+    void loadReadAloudSettings()
+      .then((settings) => {
+        if (active) {
+          setVoiceSettings(settings);
         }
       })
       .catch(() => undefined);
@@ -665,6 +682,61 @@ export default function BookSummaryScreen({
     }
   };
 
+  const updateVoiceSetting = (
+    key: keyof ReadAloudSettings,
+    direction: -1 | 1,
+  ) => {
+    stopChapterReading();
+
+    setVoiceSettings((current) => {
+      const limit = READ_ALOUD_LIMITS[key];
+      const changed =
+        Math.round((current[key] + direction * limit.step) * 10) / 10;
+      const next = {
+        ...current,
+        [key]: Math.min(limit.max, Math.max(limit.min, changed)),
+      };
+
+      void saveReadAloudSettings(next);
+      return next;
+    });
+  };
+
+  const resetVoiceSettings = () => {
+    stopChapterReading();
+    setVoiceSettings(DEFAULT_READ_ALOUD_SETTINGS);
+    void saveReadAloudSettings(DEFAULT_READ_ALOUD_SETTINGS);
+  };
+
+  const renderVoiceSettingRow = (
+    key: keyof ReadAloudSettings,
+    label: string,
+    valueText: string,
+  ) => (
+    <View style={styles.voiceSettingRow} key={key}>
+      <Text style={styles.voiceSettingLabel}>{label}</Text>
+      <View style={styles.voiceStepper}>
+        <TouchableOpacity
+          style={styles.stepButton}
+          onPress={() => updateVoiceSetting(key, -1)}
+          accessibilityRole="button"
+          accessibilityLabel={`Reducir ${label}`}
+        >
+          <Text style={styles.stepText}>−</Text>
+        </TouchableOpacity>
+        <Text style={styles.voiceSettingValue}>{valueText}</Text>
+        <TouchableOpacity
+          style={styles.stepButton}
+          onPress={() => updateVoiceSetting(key, 1)}
+          accessibilityRole="button"
+          accessibilityLabel={`Aumentar ${label}`}
+        >
+          <Text style={styles.stepText}>+</Text>
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
+
   const toggleChapterReading = (chapter: BookChapter) => {
     if (speakingChapter === chapter.number) {
       stopChapterReading();
@@ -687,7 +759,7 @@ export default function BookSummaryScreen({
           setSpeakingChapter(null);
         }
       },
-    });
+    }, voiceSettings);
   };
 
   const chapterHighlightStyle = {
@@ -716,13 +788,9 @@ export default function BookSummaryScreen({
             <TouchableOpacity
               style={styles.readAloudButton}
               hitSlop={scale(8)}
-              onPress={toggleReadAloud}
+              onPress={() => setVoiceSettingsVisible(true)}
               accessibilityRole="button"
-              accessibilityLabel={
-                readAloud
-                  ? 'Desactivar lectura en voz alta'
-                  : 'Activar lectura en voz alta'
-              }
+              accessibilityLabel="Configurar lectura en voz alta"
             >
               <Text
                 style={[
@@ -1119,6 +1187,81 @@ export default function BookSummaryScreen({
           </TouchableOpacity>
         </TouchableOpacity>
       </Modal>
+
+      <Modal
+        visible={voiceSettingsVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setVoiceSettingsVisible(false)}
+      >
+        <TouchableOpacity
+          style={styles.modalBackdrop}
+          activeOpacity={1}
+          onPress={() => setVoiceSettingsVisible(false)}
+        >
+          <TouchableOpacity
+            style={[styles.menu, styles.voiceMenu]}
+            activeOpacity={1}
+          >
+            <Text style={styles.menuTitle}>Lectura en voz alta</Text>
+            <TouchableOpacity
+              style={[
+                styles.voiceToggle,
+                readAloud ? styles.voiceToggleOn : null,
+              ]}
+              onPress={toggleReadAloud}
+              accessibilityRole="button"
+              accessibilityState={{ checked: readAloud }}
+              accessibilityLabel={
+                readAloud
+                  ? 'Desactivar lectura en voz alta'
+                  : 'Activar lectura en voz alta'
+              }
+            >
+              <Text
+                style={[
+                  styles.voiceToggleText,
+                  readAloud ? styles.voiceToggleTextOn : null,
+                ]}
+              >
+                {readAloud ? 'Activada' : 'Desactivada'}
+              </Text>
+            </TouchableOpacity>
+            {renderVoiceSettingRow(
+              'rate',
+              'Velocidad',
+              `${voiceSettings.rate.toFixed(1)}×`,
+            )}
+            {renderVoiceSettingRow(
+              'pitch',
+              'Tono',
+              `${voiceSettings.pitch.toFixed(1)}×`,
+            )}
+            {renderVoiceSettingRow(
+              'commaPauseMs',
+              'Pausa coma',
+              `${voiceSettings.commaPauseMs} ms`,
+            )}
+            {renderVoiceSettingRow(
+              'periodPauseMs',
+              'Pausa punto',
+              `${voiceSettings.periodPauseMs} ms`,
+            )}
+            <TouchableOpacity
+              onPress={resetVoiceSettings}
+              accessibilityRole="button"
+            >
+              <Text style={styles.devLink}>Restablecer valores</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={() => setVoiceSettingsVisible(false)}
+              accessibilityRole="button"
+            >
+              <Text style={styles.link}>Cerrar</Text>
+            </TouchableOpacity>
+          </TouchableOpacity>
+        </TouchableOpacity>
+      </Modal>
     </View>
   );
 }
@@ -1338,6 +1481,70 @@ function createStyles(colors: Palette) {
     },
     modelMenu: {
       maxHeight: '92%',
+    },
+    voiceMenu: {
+      maxHeight: '92%',
+      gap: metrics.spacing.sm,
+    },
+    voiceToggle: {
+      width: '100%',
+      alignItems: 'center',
+      paddingVertical: metrics.spacing.sm,
+      borderRadius: metrics.radius.sm,
+      borderWidth: scale(1),
+      borderColor: colors.border,
+      backgroundColor: colors.background,
+    },
+    voiceToggleOn: {
+      backgroundColor: colors.primary,
+      borderColor: colors.primary,
+    },
+    voiceToggleText: {
+      color: colors.muted,
+      fontSize: metrics.font.body,
+      fontWeight: '700',
+    },
+    voiceToggleTextOn: {
+      color: colors.surface,
+    },
+    voiceSettingRow: {
+      width: '100%',
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      gap: metrics.spacing.sm,
+    },
+    voiceSettingLabel: {
+      color: colors.text,
+      fontSize: metrics.font.body,
+      fontWeight: '600',
+    },
+    voiceStepper: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: metrics.spacing.xs,
+    },
+    stepButton: {
+      width: scale(30),
+      height: scale(30),
+      alignItems: 'center',
+      justifyContent: 'center',
+      borderRadius: scale(15),
+      borderWidth: scale(1),
+      borderColor: colors.border,
+      backgroundColor: colors.background,
+    },
+    stepText: {
+      color: colors.primary,
+      fontSize: metrics.font.body,
+      fontWeight: '700',
+    },
+    voiceSettingValue: {
+      minWidth: scale(64),
+      color: colors.muted,
+      fontSize: metrics.font.body,
+      fontWeight: '600',
+      textAlign: 'center',
     },
     modelList: {
       width: '100%',

@@ -2,12 +2,66 @@ import * as Speech from 'expo-speech';
 import { getItem, setItem } from './storage';
 
 const READ_ALOUD_KEY = 'bibliary.readAloud';
+const SETTINGS_KEY = 'bibliary.readAloudSettings';
+
+export type ReadAloudSettings = {
+  rate: number;
+  pitch: number;
+  commaPauseMs: number;
+  periodPauseMs: number;
+};
+
+export const DEFAULT_READ_ALOUD_SETTINGS: ReadAloudSettings = {
+  rate: 1,
+  pitch: 1,
+  commaPauseMs: 200,
+  periodPauseMs: 400,
+};
+
+export const READ_ALOUD_LIMITS: Record<
+  keyof ReadAloudSettings,
+  { min: number; max: number; step: number }
+> = {
+  rate: { min: 0.6, max: 1.8, step: 0.1 },
+  pitch: { min: 0.6, max: 1.6, step: 0.1 },
+  commaPauseMs: { min: 0, max: 800, step: 100 },
+  periodPauseMs: { min: 0, max: 1500, step: 100 },
+};
 
 export type ReadAloudHandlers = {
   onDone?: () => void;
   onError?: () => void;
   isCancelled?: () => boolean;
 };
+
+type SpeechUnit = {
+  text: string;
+  pause: number;
+};
+
+let generation = 0;
+let pendingTimer: ReturnType<typeof setTimeout> | null = null;
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value));
+}
+
+function normalizeSettings(value: Partial<ReadAloudSettings>): ReadAloudSettings {
+  const result = { ...DEFAULT_READ_ALOUD_SETTINGS };
+
+  (Object.keys(READ_ALOUD_LIMITS) as (keyof ReadAloudSettings)[]).forEach(
+    (key) => {
+      const raw = value[key];
+
+      if (typeof raw === 'number' && Number.isFinite(raw)) {
+        const limit = READ_ALOUD_LIMITS[key];
+        result[key] = clamp(raw, limit.min, limit.max);
+      }
+    },
+  );
+
+  return result;
+}
 
 export async function loadReadAloud(): Promise<boolean> {
   const saved = await getItem(READ_ALOUD_KEY);
@@ -19,7 +73,34 @@ export async function saveReadAloud(enabled: boolean): Promise<void> {
   await setItem(READ_ALOUD_KEY, enabled ? 'true' : 'false');
 }
 
+export async function loadReadAloudSettings(): Promise<ReadAloudSettings> {
+  const saved = await getItem(SETTINGS_KEY);
+
+  if (!saved) {
+    return DEFAULT_READ_ALOUD_SETTINGS;
+  }
+
+  try {
+    return normalizeSettings(JSON.parse(saved) as Partial<ReadAloudSettings>);
+  } catch {
+    return DEFAULT_READ_ALOUD_SETTINGS;
+  }
+}
+
+export async function saveReadAloudSettings(
+  settings: ReadAloudSettings,
+): Promise<void> {
+  await setItem(SETTINGS_KEY, JSON.stringify(normalizeSettings(settings)));
+}
+
 export function stopReading(): Promise<void> {
+  generation += 1;
+
+  if (pendingTimer !== null) {
+    clearTimeout(pendingTimer);
+    pendingTimer = null;
+  }
+
   return Speech.stop();
 }
 
@@ -71,27 +152,80 @@ function splitForSpeech(text: string, maxLength: number): string[] {
   return chunks;
 }
 
-export function readText(text: string, handlers: ReadAloudHandlers): void {
+function buildUnits(
+  text: string,
+  settings: ReadAloudSettings,
+): SpeechUnit[] {
+  const units: SpeechUnit[] = [];
   const chunks = splitForSpeech(text, Speech.maxSpeechInputLength);
+
+  for (const chunk of chunks) {
+    const pieces =
+      chunk.match(/[^,;.!?]+[,;.!?]?/g)?.map((piece) => piece.trim()) ?? [chunk];
+
+    for (const piece of pieces) {
+      if (!piece) {
+        continue;
+      }
+
+      const ending = piece.slice(-1);
+      const pause = '.!?'.includes(ending)
+        ? settings.periodPauseMs
+        : ',;'.includes(ending)
+          ? settings.commaPauseMs
+          : 0;
+
+      units.push({ text: piece, pause });
+    }
+  }
+
+  return units;
+}
+
+export function readText(
+  text: string,
+  handlers: ReadAloudHandlers,
+  settings: ReadAloudSettings = DEFAULT_READ_ALOUD_SETTINGS,
+): void {
+  const currentGeneration = ++generation;
+  const units = buildUnits(text, settings);
   let index = 0;
 
+  const isActive = () =>
+    currentGeneration === generation && !handlers.isCancelled?.();
+
   const speakNext = () => {
-    if (handlers.isCancelled?.()) {
+    if (!isActive()) {
       return;
     }
 
-    if (index >= chunks.length) {
+    if (index >= units.length) {
       handlers.onDone?.();
       return;
     }
 
-    const chunk = chunks[index];
+    const unit = units[index];
     index += 1;
 
-    Speech.speak(chunk, {
+    Speech.speak(unit.text, {
       language: 'es',
-      rate: 1,
-      onDone: speakNext,
+      rate: settings.rate,
+      pitch: settings.pitch,
+      onDone: () => {
+        if (!isActive()) {
+          return;
+        }
+
+        if (unit.pause > 0 && index < units.length) {
+          pendingTimer = setTimeout(() => {
+            pendingTimer = null;
+            speakNext();
+          }, unit.pause);
+          return;
+        }
+
+        speakNext();
+      },
       onStopped: () => handlers.onDone?.(),
       onError: () => handlers.onError?.(),
     });
