@@ -42,6 +42,7 @@ type SpeechUnit = {
 
 let generation = 0;
 let pendingTimer: ReturnType<typeof setTimeout> | null = null;
+let watchdogTimer: ReturnType<typeof setTimeout> | null = null;
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
@@ -94,13 +95,21 @@ export async function saveReadAloudSettings(
   await setItem(SETTINGS_KEY, JSON.stringify(normalizeSettings(settings)));
 }
 
-export function stopReading(): Promise<void> {
-  generation += 1;
-
+function clearPendingWork(): void {
   if (pendingTimer !== null) {
     clearTimeout(pendingTimer);
     pendingTimer = null;
   }
+
+  if (watchdogTimer !== null) {
+    clearTimeout(watchdogTimer);
+    watchdogTimer = null;
+  }
+}
+
+export function stopReading(): Promise<void> {
+  generation += 1;
+  clearPendingWork();
 
   return Speech.stop();
 }
@@ -153,7 +162,7 @@ function splitForSpeech(text: string, maxLength: number): string[] {
   return chunks;
 }
 
-function buildUnits(
+function buildNativeUnits(
   text: string,
   settings: ReadAloudSettings,
 ): SpeechUnit[] {
@@ -189,13 +198,54 @@ export function readText(
   settings: ReadAloudSettings = DEFAULT_READ_ALOUD_SETTINGS,
 ): void {
   const currentGeneration = ++generation;
-  const units = buildUnits(text, settings);
+  const isWeb = Platform.OS === 'web';
+
+  // En web no partimos por puntuación: dejar la cola vacía durante la pausa
+  // hace que Chrome móvil se quede en pausa y no reanude el siguiente fragmento.
+  // El navegador ya aplica pausas naturales en comas y puntos.
+  const units: SpeechUnit[] = isWeb
+    ? splitForSpeech(text, Speech.maxSpeechInputLength).map((chunk) => ({
+        text: chunk,
+        pause: 0,
+      }))
+    : buildNativeUnits(text, settings);
+
   let index = 0;
 
   const isActive = () =>
     currentGeneration === generation && !handlers.isCancelled?.();
 
-  const continueAfter = (unit: { pause: number }) => {
+  const clearWatchdog = () => {
+    if (watchdogTimer !== null) {
+      clearTimeout(watchdogTimer);
+      watchdogTimer = null;
+    }
+  };
+
+  const armWatchdog = () => {
+    clearWatchdog();
+
+    if (!isWeb) {
+      return;
+    }
+
+    // Si no llegan eventos de palabra durante 30 s, damos la lectura por
+    // bloqueada para que el botón no siga pareciendo que está leyendo.
+    watchdogTimer = setTimeout(() => {
+      watchdogTimer = null;
+
+      if (!isActive()) {
+        return;
+      }
+
+      generation += 1;
+      clearPendingWork();
+      void Speech.stop().catch(() => undefined);
+      handlers.onError?.();
+    }, 30000);
+  };
+
+  const continueAfter = (unit: SpeechUnit) => {
     if (!isActive()) {
       return;
     }
@@ -219,33 +269,61 @@ export function readText(
     }
 
     if (index >= units.length) {
+      clearWatchdog();
       handlers.onDone?.();
       return;
     }
 
     const unit = units[index];
     index += 1;
+    let handled = false;
 
-    // Chrome puede dejar el sintetizador en pausa cuando la cola se vacía
-    // durante la espera; reanudarlo antes de cada frase evita el bloqueo.
-    if (Platform.OS === 'web') {
-      void Speech.resume().catch(() => undefined);
-    }
+    const advance = () => {
+      if (handled || !isActive()) {
+        return;
+      }
+
+      handled = true;
+      clearWatchdog();
+      continueAfter(unit);
+    };
+
+    const fail = () => {
+      if (handled || !isActive()) {
+        return;
+      }
+
+      handled = true;
+      clearWatchdog();
+      handlers.onError?.();
+    };
+
+    armWatchdog();
 
     Speech.speak(unit.text, {
       language: 'es',
       rate: settings.rate,
       pitch: settings.pitch,
-      onDone: () => continueAfter(unit),
-      onStopped: () => {
-        if (isActive()) {
-          continueAfter(unit);
-        } else {
-          handlers.onDone?.();
+      onStart: () => {
+        if (isWeb && !handled) {
+          armWatchdog();
         }
       },
-      onError: () => handlers.onError?.(),
+      onBoundary: () => {
+        if (isWeb && !handled) {
+          armWatchdog();
+        }
+      },
+      onDone: advance,
+      // Chrome dispara onpause al vaciar la cola; no es un stop del usuario.
+      onStopped: advance,
+      onError: fail,
     });
+
+    if (isWeb) {
+      // Tras una pausa del motor, Chrome necesita reanudar la síntesis.
+      void Speech.resume().catch(() => undefined);
+    }
   };
 
   speakNext();
