@@ -2,7 +2,7 @@
   "expo": {
     "name": "Libreve",
     "slug": "libreve",
-    "version": "0.2.6",
+    "version": "0.2.7",
     "scheme": "libreve",
     "orientation": "portrait",
     "userInterfaceStyle": "light",

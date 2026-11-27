@@ -1,19 +1,16 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Animated,
   BackHandler,
   findNodeHandle,
   Image,
   Modal,
-  PanResponder,
   ScrollView,
   StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
   View,
-  type GestureResponderEvent,
-  type LayoutChangeEvent,
   type NativeScrollEvent,
   type NativeSyntheticEvent,
 } from 'react-native';
@@ -269,34 +266,23 @@ export default function BookSummaryScreen({
   const [highlightedParagraph, setHighlightedParagraph] = useState<
     string | null
   >(null);
-  const [isDraggingRail, setIsDraggingRail] = useState(false);
-  const [activeChapter, setActiveChapter] = useState<number | null>(null);
-  const [railHeight, setRailHeight] = useState(0);
-  const [canUseRail, setCanUseRail] = useState(false);
   const highlightRef = useRef(new Animated.Value(0)).current;
   const paragraphHighlightRef = useRef(new Animated.Value(0)).current;
   const paragraphHighlightToken = useRef(0);
-  const scrollProgress = useRef(new Animated.Value(0)).current;
   const started = useRef(false);
   const scrollRef = useRef<ScrollView>(null);
+  const scrollOffsetRef = useRef(0);
   const searchListRef = useRef<ScrollView>(null);
   const searchListOffsetRef = useRef(0);
   const searchResultRefs = useRef<Record<number, View | null>>({});
   const chapterRefs = useRef<Record<number, View | null>>({});
   const paragraphRefs = useRef<Record<string, View | null>>({});
-  const chapterOffsetsRef = useRef<Record<number, number>>({});
-  const scrollMetricsRef = useRef({
-    contentHeight: 0,
-    viewportHeight: 0,
-    offset: 0,
-  });
   const shouldScrollRef = useRef(false);
   const pendingFocusRef = useRef<number | null>(null);
   const userScrolledRef = useRef(false);
   const similarRequestedRef = useRef(false);
   const lastOffsetRef = useRef(0);
   const speechTokenRef = useRef(0);
-  const railThumbHeight = scale(28);
 
   useEffect(() => {
     let active = true;
@@ -388,32 +374,6 @@ export default function BookSummaryScreen({
     settingsVisible,
   ]);
 
-  const refreshRailVisibility = () => {
-    const { contentHeight, viewportHeight } = scrollMetricsRef.current;
-    setCanUseRail(
-      chapters.length > 1 && contentHeight > viewportHeight + scale(16),
-    );
-  };
-
-  const updateScrollProgress = (offset = scrollMetricsRef.current.offset) => {
-    const { contentHeight, viewportHeight } = scrollMetricsRef.current;
-    const maxScroll = Math.max(1, contentHeight - viewportHeight);
-
-    scrollProgress.setValue(Math.min(1, Math.max(0, offset / maxScroll)));
-
-    let current: number | null = null;
-
-    for (const chapter of chapters) {
-      const chapterOffset = chapterOffsetsRef.current[chapter.number];
-
-      if (chapterOffset !== undefined && chapterOffset <= offset + scale(24)) {
-        current = chapter.number;
-      }
-    }
-
-    setActiveChapter((previous) => (previous === current ? previous : current));
-  };
-
   const handleScroll = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
     const offset = event.nativeEvent.contentOffset.y;
 
@@ -427,61 +387,8 @@ export default function BookSummaryScreen({
     }
 
     lastOffsetRef.current = offset;
-    scrollMetricsRef.current.offset = offset;
-    updateScrollProgress(offset);
+    scrollOffsetRef.current = offset;
   };
-
-  const handleContentSizeChange = (_width: number, height: number) => {
-    scrollMetricsRef.current.contentHeight = height;
-    updateScrollProgress();
-    refreshRailVisibility();
-  };
-
-  const handleScrollViewLayout = (event: LayoutChangeEvent) => {
-    scrollMetricsRef.current.viewportHeight = event.nativeEvent.layout.height;
-    updateScrollProgress();
-    refreshRailVisibility();
-  };
-
-  const scrollToRatio = useCallback((ratio: number) => {
-    const { contentHeight, viewportHeight } = scrollMetricsRef.current;
-    const maxScroll = Math.max(0, contentHeight - viewportHeight);
-
-    scrollRef.current?.scrollTo({
-      y: Math.min(1, Math.max(0, ratio)) * maxScroll,
-      animated: false,
-    });
-  }, []);
-
-  const handleRailTouch = useCallback(
-    (event: GestureResponderEvent) => {
-      if (!canUseRail || railHeight <= 0) {
-        return;
-      }
-
-      userScrolledRef.current = true;
-      const usableHeight = Math.max(1, railHeight - railThumbHeight);
-      const y = event.nativeEvent.locationY - railThumbHeight / 2;
-      scrollToRatio(y / usableHeight);
-    },
-    [canUseRail, railHeight, railThumbHeight, scrollToRatio],
-  );
-
-  const railPanResponder = useMemo(
-    () =>
-      PanResponder.create({
-        onStartShouldSetPanResponder: () => canUseRail,
-        onMoveShouldSetPanResponder: () => canUseRail,
-        onPanResponderGrant: (event) => {
-          setIsDraggingRail(true);
-          handleRailTouch(event);
-        },
-        onPanResponderMove: (event) => handleRailTouch(event),
-        onPanResponderRelease: () => setIsDraggingRail(false),
-        onPanResponderTerminate: () => setIsDraggingRail(false),
-      }),
-    [canUseRail, handleRailTouch],
-  );
 
   const loadSimilar = async () => {
     if (similarRequestedRef.current) {
@@ -844,7 +751,7 @@ export default function BookSummaryScreen({
       target.measureLayout(
         scrollerNode,
         (_x, y) => {
-          const absoluteY = scrollMetricsRef.current.offset + y;
+          const absoluteY = scrollOffsetRef.current + y;
           scroller.scrollTo({
             y: Math.max(0, absoluteY - scale(24)),
             animated: true,
@@ -957,36 +864,6 @@ export default function BookSummaryScreen({
     }),
     [summaryStyle.font, summaryStyle.fontSize],
   );
-
-  // Guardamos la posición real de cada capítulo para que el rail indique el
-  // capítulo activo aunque los capítulos tengan extensiones distintas.
-  useEffect(() => {
-    const frame = requestAnimationFrame(() => {
-      const scroller = scrollRef.current;
-      const scrollerNode = scroller ? findNodeHandle(scroller) : null;
-
-      if (scrollerNode === null) {
-        return;
-      }
-
-      const currentOffset = scrollMetricsRef.current.offset;
-
-      chapters.forEach((chapter) => {
-        chapterRefs.current[chapter.number]?.measureLayout(
-          scrollerNode,
-          (_x, y) => {
-            chapterOffsetsRef.current[chapter.number] = currentOffset + y;
-          },
-          () => {},
-        );
-      });
-
-      updateScrollProgress();
-      refreshRailVisibility();
-    });
-
-    return () => cancelAnimationFrame(frame);
-  }, [chapters, summaryTextStyle, styles]);
 
   const stopChapterReading = () => {
     speechTokenRef.current += 1;
@@ -1189,7 +1066,7 @@ export default function BookSummaryScreen({
     target.measureLayout(
       scrollerNode,
       (_x, y) => {
-        const absoluteY = scrollMetricsRef.current.offset + y;
+        const absoluteY = scrollOffsetRef.current + y;
         scroller.scrollTo({
           y: Math.max(0, absoluteY - scale(80)),
           animated: true,
@@ -1225,11 +1102,8 @@ export default function BookSummaryScreen({
         style={styles.scrollView}
         contentContainerStyle={styles.content}
         onScroll={handleScroll}
-        onContentSizeChange={handleContentSizeChange}
-        onLayout={handleScrollViewLayout}
         scrollEventThrottle={16}
-        showsVerticalScrollIndicator={false}
-        showsHorizontalScrollIndicator={false}
+        showsVerticalScrollIndicator
       >
         <View style={styles.card}>
           <View style={styles.cardHeader}>
@@ -1423,62 +1297,6 @@ export default function BookSummaryScreen({
           ) : null}
         </View>
       </ScrollView>
-
-      {canUseRail ? (
-        <View
-          style={styles.rail}
-          onLayout={(event) => setRailHeight(event.nativeEvent.layout.height)}
-          accessibilityRole="adjustable"
-          accessibilityLabel="Navegar por los capítulos del resumen"
-          {...railPanResponder.panHandlers}
-        >
-          <View style={styles.railTrack} />
-          {chapters.map((chapter, index) => {
-            const maxScroll = Math.max(
-              1,
-              scrollMetricsRef.current.contentHeight -
-                scrollMetricsRef.current.viewportHeight,
-            );
-            const fallback =
-              (index / Math.max(1, chapters.length - 1)) * maxScroll;
-            const offset =
-              chapterOffsetsRef.current[chapter.number] ?? fallback;
-            const top =
-              (Math.min(1, Math.max(0, offset / maxScroll)) *
-                Math.max(0, railHeight - railThumbHeight));
-
-            return (
-              <View key={chapter.number} style={[styles.railTick, { top }]} />
-            );
-          })}
-          <Animated.View
-            style={[
-              styles.railThumb,
-              {
-                transform: [
-                  {
-                    translateY: scrollProgress.interpolate({
-                      inputRange: [0, 1],
-                      outputRange: [
-                        0,
-                        Math.max(0, railHeight - railThumbHeight),
-                      ],
-                    }),
-                  },
-                ],
-              },
-            ]}
-          >
-            {isDraggingRail && activeChapter !== null ? (
-              <View style={styles.railTooltip}>
-                <Text style={styles.railTooltipText}>
-                  Cap. {activeChapter}
-                </Text>
-              </View>
-            ) : null}
-          </Animated.View>
-        </View>
-      ) : null}
 
       {chapters.length > 0 ? (
         <TouchableOpacity
@@ -2425,57 +2243,6 @@ function createStyles(colors: Palette) {
     },
     searchButton: {
       right: metrics.spacing.sm + scale(48),
-    },
-    rail: {
-      position: 'absolute',
-      right: scale(2),
-      top: scale(140),
-      bottom: scale(72),
-      width: scale(24),
-      alignItems: 'center',
-      justifyContent: 'center',
-    },
-    railTrack: {
-      width: scale(3),
-      height: '100%',
-      borderRadius: scale(2),
-      backgroundColor: colors.border,
-    },
-    railTick: {
-      position: 'absolute',
-      right: 0,
-      width: scale(8),
-      height: scale(1),
-      backgroundColor: colors.muted,
-      opacity: 0.55,
-    },
-    railThumb: {
-      position: 'absolute',
-      right: scale(1),
-      width: scale(18),
-      height: scale(28),
-      borderRadius: scale(9),
-      borderWidth: scale(2),
-      borderColor: colors.surface,
-      backgroundColor: colors.primary,
-      shadowColor: colors.primaryDark,
-      shadowOpacity: 0.25,
-      shadowRadius: scale(4),
-      elevation: 3,
-    },
-    railTooltip: {
-      position: 'absolute',
-      right: scale(22),
-      top: -scale(4),
-      paddingHorizontal: scale(8),
-      paddingVertical: scale(4),
-      borderRadius: scale(8),
-      backgroundColor: colors.primary,
-    },
-    railTooltipText: {
-      color: colors.background,
-      fontSize: scale(11),
-      fontWeight: '700',
     },
     searchMenu: {
       maxHeight: '92%',
