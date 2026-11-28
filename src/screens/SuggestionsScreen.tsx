@@ -16,6 +16,9 @@ import { metrics, scale } from '../theme/metrics';
 
 type SuggestionsScreenProps = {
   books: BookSuggestion[];
+  status?: string;
+  isRefreshing?: boolean;
+  onRefresh?: () => void;
   onBack: () => void;
   onOpenLibrary: () => void;
   onOpenSearch: () => void;
@@ -24,6 +27,9 @@ type SuggestionsScreenProps = {
 
 export default function SuggestionsScreen({
   books,
+  status = '',
+  isRefreshing = false,
+  onRefresh,
   onBack,
   onOpenLibrary,
   onOpenSearch,
@@ -71,6 +77,14 @@ export default function SuggestionsScreen({
               </View>
             );
           })}
+
+          {status ? <Text style={styles.status}>{status}</Text> : null}
+          <PrimaryButton
+            colors={colors}
+            label="Más sugerencias"
+            onPress={() => onRefresh?.()}
+            disabled={isRefreshing || !onRefresh}
+          />
 
           <TouchableOpacity
             onPress={() => void Linking.openURL('https://openlibrary.org/')}
@@ -133,6 +147,12 @@ function createStyles(colors: Palette) {
       color: colors.muted,
       fontSize: metrics.font.body,
       lineHeight: scale(20),
+      textAlign: 'center',
+    },
+    status: {
+      color: colors.muted,
+      fontSize: metrics.font.body,
+      lineHeight: scale(19),
       textAlign: 'center',
     },
     bookRow: {

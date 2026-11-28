@@ -2,6 +2,8 @@ import type { BookChapter, BookSuggestion } from './ai';
 import { getItem, removeItem, setItem } from './storage';
 
 const SUGGESTIONS_KEY = 'bibliary.suggestions';
+const SUGGESTION_HISTORY_KEY = 'bibliary.suggestionHistory';
+const SUGGESTION_HISTORY_LIMIT = 30;
 const LAST_BOOK_KEY = 'bibliary.lastBook';
 const LIBRARY_KEY = 'bibliary.library';
 const CHAPTERS_PREFIX = 'bibliary.chapters.';
@@ -31,12 +33,14 @@ function normalize(value: string): string {
     .slice(0, 60);
 }
 
-function bookKey(book: BookSuggestion): string {
+type BookIdentity = Pick<BookSuggestion, 'title' | 'author'>;
+
+function bookKey(book: BookIdentity): string {
   return `${normalize(book.title)}-${normalize(book.author)}`;
 }
 
 /** Identificador estable para usar el mismo libro en otras características. */
-export function getBookKey(book: BookSuggestion): string {
+export function getBookKey(book: BookIdentity): string {
   return bookKey(book);
 }
 
@@ -55,6 +59,19 @@ function isBook(value: unknown): value is BookSuggestion {
     typeof item.title === 'string' &&
     typeof item.author === 'string' &&
     typeof item.reason === 'string'
+  );
+}
+
+function isBookIdentity(value: unknown): value is BookIdentity {
+  if (!value || typeof value !== 'object') {
+    return false;
+  }
+
+  const item = value as Record<string, unknown>;
+
+  return (
+    typeof item.title === 'string' &&
+    typeof item.author === 'string'
   );
 }
 
@@ -96,6 +113,39 @@ export async function saveSuggestions(books: BookSuggestion[]): Promise<void> {
   await setItem(SUGGESTIONS_KEY, JSON.stringify(books));
 }
 
+/** Libros mostrados recientemente, de más antiguo a más reciente. */
+export async function loadSuggestionHistory(): Promise<BookIdentity[]> {
+  const parsed = await readJson(SUGGESTION_HISTORY_KEY);
+
+  return Array.isArray(parsed)
+    ? parsed.filter(isBookIdentity).slice(-SUGGESTION_HISTORY_LIMIT)
+    : [];
+}
+
+/** Guarda los libros que acaba de ver el usuario para no repetirlos seguidos. */
+export async function recordSuggestionsShown(
+  books: BookSuggestion[],
+): Promise<void> {
+  const history = await loadSuggestionHistory();
+  const updated = [...history];
+
+  for (const book of books) {
+    const key = bookKey(book);
+    const index = updated.findIndex((item) => bookKey(item) === key);
+
+    if (index >= 0) {
+      updated.splice(index, 1);
+    }
+
+    updated.push({ title: book.title, author: book.author });
+  }
+
+  await setItem(
+    SUGGESTION_HISTORY_KEY,
+    JSON.stringify(updated.slice(-SUGGESTION_HISTORY_LIMIT)),
+  );
+}
+
 export async function loadLastBook(): Promise<BookSuggestion | null> {
   const parsed = await readJson(LAST_BOOK_KEY);
 
@@ -112,6 +162,7 @@ export async function clearLastBook(): Promise<void> {
 
 export async function clearSuggestions(): Promise<void> {
   await removeItem(SUGGESTIONS_KEY);
+  await removeItem(SUGGESTION_HISTORY_KEY);
   await clearLastBook();
 }
 

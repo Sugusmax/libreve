@@ -6,6 +6,7 @@ import {
 } from '../data/providers';
 import { loadActiveProvider, loadApiKey } from './apiKey';
 import { fetchCover } from './covers';
+import { getBookKey } from './library';
 
 export type BookSuggestion = {
   title: string;
@@ -265,8 +266,20 @@ const SUMMARY_SCHEMA: JsonSchema = {
   required: ['chapter', 'title', 'summary', 'continuation', 'is_last'],
 };
 
-function buildUserPrompt(interests: string[]): string {
-  return `Intereses: ${interests.join(', ')}. Devuelve 6 libros con motivo breve.`;
+function buildUserPrompt(
+  interests: string[],
+  excluded: Array<Pick<BookSuggestion, 'title' | 'author'>> = [],
+): string {
+  const avoid = excluded.length
+    ? ` No repitas estos libros, que ya se mostraron antes: ${excluded
+        .slice(-18)
+        .map((book) => `"${book.title}" de ${book.author}`)
+        .join('; ')}.`
+    : '';
+
+  return `Intereses: ${interests.join(
+    ', ',
+  )}. Devuelve 6 libros concretos y distintos, con motivo breve.${avoid}`;
 }
 
 function buildSummaryPrompt(
@@ -1239,25 +1252,87 @@ function parseChapter(text: string, fallbackNumber: number): BookChapter {
   };
 }
 
-export async function fetchSuggestions(
+type SuggestionIdentity = Pick<BookSuggestion, 'title' | 'author'>;
+
+function filterSuggestions(
+  books: BookSuggestion[],
+  excluded: Set<string>,
+): BookSuggestion[] {
+  const seen = new Set<string>();
+
+  return books.filter((book) => {
+    const key = getBookKey(book);
+
+    if (!key || excluded.has(key) || seen.has(key)) {
+      return false;
+    }
+
+    seen.add(key);
+    return true;
+  });
+}
+
+async function requestSuggestions(
   interests: string[],
+  excluded: SuggestionIdentity[],
   onStatus?: StatusReporter,
 ): Promise<BookSuggestion[]> {
   const text = await requestAiText(
     SYSTEM_PROMPT,
-    buildUserPrompt(interests),
+    buildUserPrompt(interests, excluded),
     BOOKS_SCHEMA,
     650,
     onStatus,
   );
-  const books = parseBooks(text);
 
-  if (books.length === 0) {
-    throw new Error('La IA no devolvió sugerencias válidas.');
+  return parseBooks(text, excluded.length > 0 ? 12 : 6);
+}
+
+export async function fetchSuggestions(
+  interests: string[],
+  onStatus?: StatusReporter,
+  excluded: SuggestionIdentity[] = [],
+): Promise<BookSuggestion[]> {
+  const excludedKeys = new Set(excluded.map(getBookKey));
+  let books = filterSuggestions(
+    await requestSuggestions(interests, excluded, onStatus),
+    excludedKeys,
+  );
+
+  if (books.length < 6 && excluded.length > 0) {
+    // Si la IA insiste en repetir títulos antiguos, relajamos la exclusión:
+    // seguimos evitando los más recientes antes que mostrar menos de 6 libros.
+    const recent = excluded.slice(-8);
+    const recentKeys = new Set(recent.map(getBookKey));
+    onStatus?.('Buscando otros títulos…');
+
+    const retry = filterSuggestions(
+      await requestSuggestions(interests, recent, onStatus),
+      recentKeys,
+    );
+    const selectedKeys = new Set(books.map(getBookKey));
+
+    books = [
+      ...books,
+      ...retry.filter((book) => {
+        const key = getBookKey(book);
+
+        if (selectedKeys.has(key)) {
+          return false;
+        }
+
+        selectedKeys.add(key);
+        return true;
+      }),
+    ];
+  }
+
+  if (books.length < 6) {
+    throw new Error('La IA no devolvió 6 sugerencias válidas.');
   }
 
   return Promise.all(
-    books.map(async (book) => {
+    books.slice(0, 6).map(async (book) => {
       const cover = await fetchCover(book.title, book.author);
 
       return {

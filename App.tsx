@@ -9,13 +9,15 @@ import SearchScreen from './src/screens/SearchScreen';
 import SuggestionsScreen from './src/screens/SuggestionsScreen';
 import { initializeAds, showBookAd } from './src/services/ads';
 import { loadApiKey } from './src/services/apiKey';
-import type { BookSuggestion } from './src/services/ai';
+import { fetchSuggestions, type BookSuggestion } from './src/services/ai';
 import {
   booksMatch,
   clearLastBook,
   clearSuggestions,
   loadLastBook,
+  loadSuggestionHistory,
   loadSuggestions,
+  recordSuggestionsShown,
   saveLastBook,
   saveSuggestions,
 } from './src/services/library';
@@ -99,6 +101,8 @@ function AppContent() {
   const [apiKey, setApiKey] = useState('');
   const [interests, setInterests] = useState<string[]>([]);
   const [suggestions, setSuggestions] = useState<BookSuggestion[]>([]);
+  const [suggestionsStatus, setSuggestionsStatus] = useState('');
+  const [isRefreshingSuggestions, setIsRefreshingSuggestions] = useState(false);
   const [isReady, setIsReady] = useState(false);
   const [interestsCompleted, setInterestsCompleted] = useState(false);
   const [notificationsEnabled, setNotificationsEnabledState] = useState(false);
@@ -138,6 +142,7 @@ function AppContent() {
 
         if (savedSuggestions.length > 0) {
           setSuggestions(savedSuggestions);
+          void recordSuggestionsShown(savedSuggestions);
         }
 
         setStack(
@@ -207,6 +212,44 @@ function AppContent() {
       );
 
       setNotificationsEnabledState(enabled);
+    })();
+  };
+
+  const refreshingSuggestionsRef = useRef(false);
+
+  const refreshSuggestions = () => {
+    if (refreshingSuggestionsRef.current) {
+      return;
+    }
+
+    refreshingSuggestionsRef.current = true;
+    setIsRefreshingSuggestions(true);
+    setSuggestionsStatus('Buscando otros libros…');
+
+    void (async () => {
+      try {
+        const history = await loadSuggestionHistory();
+        const books = await fetchSuggestions(
+          interests,
+          setSuggestionsStatus,
+          [...history, ...suggestions],
+        );
+
+        setSuggestions(books);
+        await saveSuggestions(books);
+        await recordSuggestionsShown(books);
+        void syncDailyRecommendation(true);
+        setSuggestionsStatus('');
+      } catch (error) {
+        setSuggestionsStatus(
+          error instanceof Error
+            ? error.message
+            : 'No se pudieron cargar más sugerencias.',
+        );
+      } finally {
+        refreshingSuggestionsRef.current = false;
+        setIsRefreshingSuggestions(false);
+      }
     })();
   };
 
@@ -310,6 +353,9 @@ function AppContent() {
     return (
       <SuggestionsScreen
         books={suggestions}
+        status={suggestionsStatus}
+        isRefreshing={isRefreshingSuggestions}
+        onRefresh={refreshSuggestions}
         onBack={pop}
         onOpenLibrary={() => push({ name: 'library' })}
         onOpenSearch={() => push({ name: 'search' })}
@@ -365,6 +411,7 @@ function AppContent() {
         if (books) {
           setSuggestions(books);
           void saveSuggestions(books);
+          void recordSuggestionsShown(books);
           void clearLastBook();
           void syncDailyRecommendation(true);
         }
