@@ -20,6 +20,7 @@ import {
   saveSuggestions,
 } from './src/services/library';
 import {
+  initializeNotifications,
   isNotificationsEnabled,
   setNotificationsEnabled as setNotificationsEnabledPreference,
   syncDailyRecommendation,
@@ -250,6 +251,7 @@ function AppContent() {
     );
 
     void initializeAds();
+    initializeNotifications();
 
     return () => subscription.remove();
   }, []);

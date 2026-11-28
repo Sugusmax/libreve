@@ -1,4 +1,4 @@
-import { NativeModules, Platform } from 'react-native';
+import { AppState, NativeModules, Platform, type AppStateStatus } from 'react-native';
 import * as FileSystem from 'expo-file-system';
 import * as Notifications from 'expo-notifications';
 import type { BookSuggestion } from './ai';
@@ -13,12 +13,14 @@ import { getItem, setItem } from './storage';
 
 const SETTINGS_KEY = 'bibliary.notificaciones';
 const CHANNEL_ID = 'libreve_recomendaciones';
-const DAILY_HOUR = 9;
-const DAILY_MINUTE = 0;
+const FIRST_DELAY_MS = 10 * 60 * 60 * 1000;
 const RESYNC_AFTER_MS = 23 * 60 * 60 * 1000;
 
 type Settings = {
   enabled: boolean;
+  // Hora local de la primera notificación; de ahí en adelante se repite cada día.
+  hour?: number;
+  minute?: number;
   lastBookKey?: string;
   lastScheduledAt?: number;
 };
@@ -52,6 +54,9 @@ const MESSAGES = [
   'En 10 minutos podrías conocer lo mejor de este libro',
 ];
 
+let appStateSubscription: { remove: () => void } | null = null;
+let previousState: AppStateStatus = AppState.currentState;
+
 async function loadSettings(): Promise<Settings> {
   const raw = await getItem(SETTINGS_KEY);
 
@@ -69,6 +74,8 @@ async function loadSettings(): Promise<Settings> {
     const value = parsed as Partial<Settings>;
     return {
       enabled: value.enabled !== false,
+      ...(typeof value.hour === 'number' ? { hour: value.hour } : {}),
+      ...(typeof value.minute === 'number' ? { minute: value.minute } : {}),
       ...(typeof value.lastBookKey === 'string'
         ? { lastBookKey: value.lastBookKey }
         : {}),
@@ -85,7 +92,7 @@ async function saveSettings(settings: Settings): Promise<void> {
   await setItem(SETTINGS_KEY, JSON.stringify(settings));
 }
 
-async function hasPermission(): Promise<boolean> {
+async function hasPermission(request: boolean): Promise<boolean> {
   if (Platform.OS === 'web') {
     return false;
   }
@@ -100,8 +107,8 @@ async function hasPermission(): Promise<boolean> {
 
   const current = await Notifications.getPermissionsAsync();
 
-  if (current.granted) {
-    return true;
+  if (current.granted || !request) {
+    return current.granted;
   }
 
   const requested = await Notifications.requestPermissionsAsync({
@@ -132,7 +139,9 @@ async function loadCandidates(): Promise<BookSuggestion[]> {
     loadLibrary(),
   ]);
   const similar = (
-    await Promise.all(library.slice(0, 3).map((entry) => loadSimilarBooks(entry.book)))
+    await Promise.all(
+      library.slice(0, 3).map((entry) => loadSimilarBooks(entry.book)),
+    )
   ).flat();
   const all = uniqueBooks([...similar, ...suggestions]);
   const readKeys = new Set(library.map((entry) => getBookKey(entry.book)));
@@ -199,17 +208,17 @@ async function cancelNative(): Promise<void> {
   );
 }
 
-async function schedule(book: BookSuggestion, coverUri: string | null, turn: number) {
+async function schedule(
+  book: BookSuggestion,
+  coverUri: string | null,
+  turn: number,
+  hour: number,
+  minute: number,
+) {
   const { title, body } = buildMessage(book, turn);
 
   if (Platform.OS === 'android' && native) {
-    await native.scheduleDaily(
-      title,
-      body,
-      coverUri ?? '',
-      DAILY_HOUR,
-      DAILY_MINUTE,
-    );
+    await native.scheduleDaily(title, body, coverUri ?? '', hour, minute);
     return;
   }
 
@@ -230,15 +239,75 @@ async function schedule(book: BookSuggestion, coverUri: string | null, turn: num
         : undefined,
     },
     trigger: {
-      hour: DAILY_HOUR,
-      minute: DAILY_MINUTE,
+      hour,
+      minute,
       repeats: true,
       channelId: CHANNEL_ID,
     },
   });
 }
 
-/** Programa (o renueva) una recomendación diaria usando solo datos locales. */
+/**
+ * La primera notificación se programa cuando la app pasa a segundo plano:
+ * 10 horas después y, desde ese momento, una vez al día a la misma hora.
+ */
+async function onAppBackground(): Promise<void> {
+  const settings = await loadSettings();
+
+  if (
+    !settings.enabled ||
+    settings.hour !== undefined ||
+    settings.minute !== undefined
+  ) {
+    return;
+  }
+
+  if (!(await hasPermission(false))) {
+    return;
+  }
+
+  const candidates = await loadCandidates();
+
+  if (candidates.length === 0) {
+    return;
+  }
+
+  const book = pickBook(candidates, settings.lastBookKey);
+  const coverUri = await downloadCover(book);
+  const when = new Date(Date.now() + FIRST_DELAY_MS);
+  const hour = when.getHours();
+  const minute = when.getMinutes();
+
+  await cancelNative();
+  await schedule(book, coverUri, 0, hour, minute);
+  await saveSettings({
+    enabled: true,
+    hour,
+    minute,
+    lastBookKey: getBookKey(book),
+    lastScheduledAt: Date.now(),
+  });
+}
+
+/** Escucha el cierre de la app para iniciar el contador de 10 horas. */
+export function initializeNotifications(): void {
+  if (Platform.OS === 'web' || appStateSubscription) {
+    return;
+  }
+
+  appStateSubscription = AppState.addEventListener('change', (next) => {
+    if (next === 'background' && previousState !== 'background') {
+      void onAppBackground();
+    }
+
+    previousState = next;
+  });
+}
+
+/**
+ * Renueva el contenido de la notificación diaria sin cambiar su hora. Antes de
+ * la primera salida solo solicita el permiso; el temporizador arranca al cerrar.
+ */
 export async function syncDailyRecommendation(force = false): Promise<void> {
   if (Platform.OS === 'web') {
     return;
@@ -251,6 +320,11 @@ export async function syncDailyRecommendation(force = false): Promise<void> {
     return;
   }
 
+  if (settings.hour === undefined || settings.minute === undefined) {
+    await hasPermission(true);
+    return;
+  }
+
   if (
     !force &&
     settings.lastScheduledAt &&
@@ -259,9 +333,7 @@ export async function syncDailyRecommendation(force = false): Promise<void> {
     return;
   }
 
-  const allowed = await hasPermission();
-
-  if (!allowed) {
+  if (!(await hasPermission(false))) {
     await cancelNative();
     return;
   }
@@ -275,12 +347,17 @@ export async function syncDailyRecommendation(force = false): Promise<void> {
 
   const book = pickBook(candidates, settings.lastBookKey);
   const coverUri = await downloadCover(book);
-  const turn = settings.lastScheduledAt ? 1 : 0;
 
   await cancelNative();
-  await schedule(book, coverUri, turn);
+  await schedule(
+    book,
+    coverUri,
+    settings.lastScheduledAt ? 1 : 0,
+    settings.hour,
+    settings.minute,
+  );
   await saveSettings({
-    enabled: true,
+    ...settings,
     lastBookKey: getBookKey(book),
     lastScheduledAt: Date.now(),
   });
@@ -301,21 +378,22 @@ export async function isNotificationsEnabled(): Promise<boolean> {
 
 /** Activa o desactiva las recomendaciones; devuelve el estado efectivo. */
 export async function setNotificationsEnabled(enabled: boolean): Promise<boolean> {
-  if (Platform.OS === 'web' || !enabled) {
-    const settings = await loadSettings();
-    await saveSettings({ ...settings, enabled: false });
+  if (Platform.OS === 'web') {
+    return false;
+  }
+
+  if (!enabled) {
+    await saveSettings({ enabled: false });
     await cancelNative();
     return false;
   }
 
-  const allowed = await hasPermission();
-
-  if (!allowed) {
+  if (!(await hasPermission(true))) {
     return false;
   }
 
-  await saveSettings({ ...(await loadSettings()), enabled: true });
-  await syncDailyRecommendation(true);
+  // Sin hora guardada: el próximo cierre de la app decide cuándo será la primera.
+  await saveSettings({ enabled: true });
   return true;
 }
 
@@ -324,7 +402,6 @@ export async function cancelNotifications(): Promise<void> {
     return;
   }
 
-  const settings = await loadSettings();
-  await saveSettings({ ...settings, enabled: false });
+  await saveSettings({ enabled: false });
   await cancelNative();
 }

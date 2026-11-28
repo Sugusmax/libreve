@@ -121,8 +121,8 @@ android {
         applicationId 'com.libreve.native'
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 18
-        versionName "0.2.8"
+        versionCode 19
+        versionName "0.2.9"
     }
     signingConfigs {
         debug {
