@@ -29,33 +29,42 @@ let loadingAd: InterstitialAd | null = null;
  * NPA como alternativa. Sin consentimiento válido no se piden anuncios.
  */
 async function refreshConsent(showFormIfRequired: boolean): Promise<ConsentState> {
-  await AdsConsent.requestInfoUpdate({
-    tagForUnderAgeOfConsent: false,
-  });
+  try {
+    await AdsConsent.requestInfoUpdate({
+      tagForUnderAgeOfConsent: false,
+    });
 
-  const info = showFormIfRequired
-    ? await AdsConsent.loadAndShowConsentFormIfRequired()
-    : await AdsConsent.getConsentInfo();
+    const info = showFormIfRequired
+      ? await AdsConsent.loadAndShowConsentFormIfRequired()
+      : await AdsConsent.getConsentInfo();
 
-  if (!info.canRequestAds) {
-    return { adsAllowed: false, personalizationAllowed: false };
+    // Solo bloqueamos si falta un consentimiento que el SDK puede pedir.
+    if (
+      info.status === AdsConsentStatus.REQUIRED &&
+      info.isConsentFormAvailable
+    ) {
+      return { adsAllowed: false, personalizationAllowed: false };
+    }
+
+    if (info.status === AdsConsentStatus.NOT_REQUIRED) {
+      return { adsAllowed: true, personalizationAllowed: true };
+    }
+
+    if (info.status === AdsConsentStatus.OBTAINED) {
+      const choices = await AdsConsent.getUserChoices();
+
+      return {
+        adsAllowed: true,
+        personalizationAllowed: choices.createAPersonalisedAdsProfile,
+      };
+    }
+
+    // UNKNOWN o UMP sin configurar: fallback NPA para no quedarse sin anuncios.
+    return { adsAllowed: true, personalizationAllowed: false };
+  } catch {
+    // Si el formulario de consentimiento falla, seguimos con ads no personalizados.
+    return { adsAllowed: true, personalizationAllowed: false };
   }
-
-  if (info.status === AdsConsentStatus.NOT_REQUIRED) {
-    return { adsAllowed: true, personalizationAllowed: true };
-  }
-
-  if (info.status === AdsConsentStatus.OBTAINED) {
-    const choices = await AdsConsent.getUserChoices();
-
-    return {
-      adsAllowed: true,
-      personalizationAllowed: choices.createAPersonalisedAdsProfile,
-    };
-  }
-
-  // REQUIRED/UNKNOWN sin permiso para pedir ads: modo seguro NPA.
-  return { adsAllowed: true, personalizationAllowed: false };
 }
 
 function applyConsent(next: ConsentState): void {
@@ -147,19 +156,18 @@ export async function initializeAds(): Promise<void> {
     return;
   }
 
+  applyConsent(await refreshConsent(true));
+
   try {
-    applyConsent(await refreshConsent(true));
-
-    if (!consentState.adsAllowed) {
-      return;
-    }
-
     await mobileAds().initialize();
-    initialized = true;
-    ensureAd();
   } catch {
-    initialized = false;
-    applyConsent({ adsAllowed: false, personalizationAllowed: false });
+    // El SDK puede inicializar más tarde; no bloqueamos los anuncios por esto.
+  }
+
+  initialized = true;
+
+  if (consentState.adsAllowed) {
+    ensureAd();
   }
 }
 
@@ -190,6 +198,10 @@ export async function openPrivacyOptions(): Promise<void> {
 }
 
 export async function showBookAd(): Promise<void> {
+  if (!initialized) {
+    await initializeAds();
+  }
+
   if (!consentState.adsAllowed) {
     return;
   }

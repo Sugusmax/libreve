@@ -106,6 +106,11 @@ async function saveSettings(settings: Settings): Promise<void> {
   await setItem(SETTINGS_KEY, JSON.stringify(settings));
 }
 
+async function disableNotifications(): Promise<void> {
+  await saveSettings({ enabled: false });
+  await cancelNative();
+}
+
 async function hasPermission(request: boolean): Promise<boolean> {
   if (Platform.OS === 'web') {
     return false;
@@ -344,6 +349,7 @@ async function onAppBackground(): Promise<void> {
   }
 
   if (!(await hasPermission(false))) {
+    await disableNotifications();
     return;
   }
 
@@ -386,7 +392,8 @@ export function initializeNotifications(): void {
 
 /**
  * Renueva el contenido de la notificación diaria sin cambiar su hora. Antes de
- * la primera salida solo solicita el permiso; el temporizador arranca al cerrar.
+ * la primera salida no hace nada: el permiso se pide al activar el interruptor
+ * y el temporizador arranca al cerrar la app.
  */
 export async function syncDailyRecommendation(force = false): Promise<void> {
   if (Platform.OS === 'web') {
@@ -401,7 +408,6 @@ export async function syncDailyRecommendation(force = false): Promise<void> {
   }
 
   if (settings.hour === undefined || settings.minute === undefined) {
-    await hasPermission(true);
     return;
   }
 
@@ -414,7 +420,7 @@ export async function syncDailyRecommendation(force = false): Promise<void> {
   }
 
   if (!(await hasPermission(false))) {
-    await cancelNative();
+    await disableNotifications();
     return;
   }
 
@@ -446,6 +452,11 @@ export async function isNotificationsEnabled(): Promise<boolean> {
     Notifications.getPermissionsAsync(),
   ]);
 
+  if (settings.enabled && !permissions.granted) {
+    await disableNotifications();
+    return false;
+  }
+
   return settings.enabled && permissions.granted;
 }
 
@@ -456,12 +467,12 @@ export async function setNotificationsEnabled(enabled: boolean): Promise<boolean
   }
 
   if (!enabled) {
-    await saveSettings({ enabled: false });
-    await cancelNative();
+    await disableNotifications();
     return false;
   }
 
   if (!(await hasPermission(true))) {
+    await disableNotifications();
     return false;
   }
 
@@ -475,6 +486,5 @@ export async function cancelNotifications(): Promise<void> {
     return;
   }
 
-  await saveSettings({ enabled: false });
-  await cancelNative();
+  await disableNotifications();
 }
