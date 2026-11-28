@@ -6,3 +6,7 @@ export async function initializeAds(): Promise<void> {
 export async function showBookAd(): Promise<void> {
   return undefined;
 }
+
+export async function openPrivacyOptions(): Promise<void> {
+  return undefined;
+}

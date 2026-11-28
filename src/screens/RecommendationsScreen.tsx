@@ -23,6 +23,7 @@ type RecommendationsScreenProps = {
   onBackToKey: () => void;
   onOpenLibrary: () => void;
   onOpenSearch: () => void;
+  onOpenPrivacyOptions: () => void;
   onContinue: (books?: BookSuggestion[]) => void;
 };
 
@@ -35,6 +36,7 @@ export default function RecommendationsScreen({
   onBackToKey,
   onOpenLibrary,
   onOpenSearch,
+  onOpenPrivacyOptions,
   onContinue,
 }: RecommendationsScreenProps) {
   const { colors } = useAppTheme();
@@ -134,6 +136,12 @@ export default function RecommendationsScreen({
           </TouchableOpacity>
           <TouchableOpacity onPress={onOpenLibrary} accessibilityRole="button">
             <Text style={styles.link}>Mi biblioteca</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={onOpenPrivacyOptions}
+            accessibilityRole="button"
+          >
+            <Text style={styles.link}>Privacidad de anuncios</Text>
           </TouchableOpacity>
           <BackLink colors={colors} label="Cambiar clave" onPress={onBackToKey} />
         </View>

@@ -7,7 +7,7 @@ import LibraryScreen from './src/screens/LibraryScreen';
 import RecommendationsScreen from './src/screens/RecommendationsScreen';
 import SearchScreen from './src/screens/SearchScreen';
 import SuggestionsScreen from './src/screens/SuggestionsScreen';
-import { initializeAds, showBookAd } from './src/services/ads';
+import { initializeAds, openPrivacyOptions, showBookAd } from './src/services/ads';
 import { loadApiKey } from './src/services/apiKey';
 import { fetchSuggestions, type BookSuggestion } from './src/services/ai';
 import {
@@ -407,6 +407,7 @@ function AppContent() {
       onBackToKey={goHome}
       onOpenLibrary={() => push({ name: 'library' })}
       onOpenSearch={() => push({ name: 'search' })}
+      onOpenPrivacyOptions={() => void openPrivacyOptions()}
       onContinue={(books) => {
         if (books) {
           setSuggestions(books);
