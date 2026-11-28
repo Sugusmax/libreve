@@ -17,6 +17,8 @@ import { metrics, scale } from '../theme/metrics';
 type RecommendationsScreenProps = {
   interests: string[];
   hasSuggestions: boolean;
+  notificationsEnabled: boolean;
+  onToggleNotifications: () => void;
   onReset: () => void;
   onBackToKey: () => void;
   onOpenLibrary: () => void;
@@ -27,6 +29,8 @@ type RecommendationsScreenProps = {
 export default function RecommendationsScreen({
   interests,
   hasSuggestions,
+  notificationsEnabled,
+  onToggleNotifications,
   onReset,
   onBackToKey,
   onOpenLibrary,
@@ -81,6 +85,36 @@ export default function RecommendationsScreen({
               </View>
             ))}
           </View>
+
+          <TouchableOpacity
+            style={styles.notificationRow}
+            onPress={onToggleNotifications}
+            accessibilityRole="switch"
+            accessibilityState={{ checked: notificationsEnabled }}
+            accessibilityLabel="Recomendaciones diarias"
+          >
+            <View style={styles.notificationCopy}>
+              <Text style={styles.notificationTitle}>Recomendaciones diarias</Text>
+              <Text style={styles.notificationStatus}>
+                {notificationsEnabled
+                  ? 'Activadas · una sugerencia por día a las 09:00'
+                  : 'Desactivadas'}
+              </Text>
+            </View>
+            <View
+              style={[
+                styles.switchTrack,
+                notificationsEnabled ? styles.switchTrackOn : null,
+              ]}
+            >
+              <View
+                style={[
+                  styles.switchThumb,
+                  notificationsEnabled ? styles.switchThumbOn : null,
+                ]}
+              />
+            </View>
+          </TouchableOpacity>
 
           <Text style={styles.status}>{status}</Text>
           <PrimaryButton colors={colors}
@@ -165,6 +199,51 @@ function createStyles(colors: Palette) {
       fontSize: metrics.font.body,
       fontWeight: '600',
       textAlign: 'center',
+    },
+    notificationRow: {
+      width: '100%',
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      gap: metrics.spacing.sm,
+      paddingHorizontal: metrics.spacing.sm,
+      paddingVertical: metrics.spacing.xs,
+      borderRadius: metrics.radius.sm,
+      backgroundColor: colors.hint,
+    },
+    notificationCopy: {
+      flexShrink: 1,
+      gap: scale(2),
+    },
+    notificationTitle: {
+      color: colors.primaryDark,
+      fontSize: metrics.font.body,
+      fontWeight: '700',
+    },
+    notificationStatus: {
+      color: colors.muted,
+      fontSize: scale(12),
+      lineHeight: scale(16),
+    },
+    switchTrack: {
+      width: scale(40),
+      height: scale(23),
+      borderRadius: scale(12),
+      backgroundColor: colors.border,
+      justifyContent: 'center',
+      paddingHorizontal: scale(3),
+    },
+    switchTrackOn: {
+      backgroundColor: colors.primary,
+    },
+    switchThumb: {
+      width: scale(17),
+      height: scale(17),
+      borderRadius: scale(9),
+      backgroundColor: colors.surface,
+    },
+    switchThumbOn: {
+      alignSelf: 'flex-end',
     },
     status: {
       color: colors.primary,

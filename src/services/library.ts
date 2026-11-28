@@ -35,6 +35,11 @@ function bookKey(book: BookSuggestion): string {
   return `${normalize(book.title)}-${normalize(book.author)}`;
 }
 
+/** Identificador estable para usar el mismo libro en otras características. */
+export function getBookKey(book: BookSuggestion): string {
+  return bookKey(book);
+}
+
 export function booksMatch(a: BookSuggestion, b: BookSuggestion): boolean {
   return bookKey(a) === bookKey(b);
 }

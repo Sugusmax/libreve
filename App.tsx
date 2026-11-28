@@ -19,6 +19,11 @@ import {
   saveLastBook,
   saveSuggestions,
 } from './src/services/library';
+import {
+  isNotificationsEnabled,
+  setNotificationsEnabled as setNotificationsEnabledPreference,
+  syncDailyRecommendation,
+} from './src/services/notifications';
 import { hasCompletedInterests, loadInterests } from './src/services/preferences';
 import { ThemeProvider, useAppTheme } from './src/theme/AppTheme';
 
@@ -95,6 +100,7 @@ function AppContent() {
   const [suggestions, setSuggestions] = useState<BookSuggestion[]>([]);
   const [isReady, setIsReady] = useState(false);
   const [interestsCompleted, setInterestsCompleted] = useState(false);
+  const [notificationsEnabled, setNotificationsEnabledState] = useState(false);
 
   const route = stack[stack.length - 1];
   const screen = route.name;
@@ -110,12 +116,14 @@ function AppContent() {
           savedInterests,
           savedSuggestions,
           savedBook,
+          notificationsAllowed,
         ] = await Promise.all([
           loadApiKey(),
           hasCompletedInterests(),
           loadInterests(),
           loadSuggestions(),
           loadLastBook(),
+          isNotificationsEnabled(),
         ]);
 
         if (!active) {
@@ -125,6 +133,7 @@ function AppContent() {
         setInterests(savedInterests);
         setApiKey(apiKey ?? '');
         setInterestsCompleted(completed);
+        setNotificationsEnabledState(notificationsAllowed);
 
         if (savedSuggestions.length > 0) {
           setSuggestions(savedSuggestions);
@@ -138,6 +147,10 @@ function AppContent() {
             savedBook,
           ),
         );
+
+        if (completed && apiKey) {
+          void syncDailyRecommendation();
+        }
       } catch {
         if (active) {
           setStack([{ name: 'home' }]);
@@ -184,6 +197,16 @@ function AppContent() {
   const goHome = () => {
     setStack([{ name: 'home' }]);
     void clearLastBook();
+  };
+
+  const toggleNotifications = () => {
+    void (async () => {
+      const enabled = await setNotificationsEnabledPreference(
+        !notificationsEnabled,
+      );
+
+      setNotificationsEnabledState(enabled);
+    })();
   };
 
   const returnToRecommendations = (books: BookSuggestion[]) => {
@@ -272,6 +295,7 @@ function AppContent() {
           if (changed) {
             setSuggestions([]);
             void clearSuggestions();
+            void syncDailyRecommendation(true);
           }
 
           returnToRecommendations(changed ? [] : suggestions);
@@ -329,6 +353,8 @@ function AppContent() {
     <RecommendationsScreen
       interests={interests}
       hasSuggestions={suggestions.length > 0}
+      notificationsEnabled={notificationsEnabled}
+      onToggleNotifications={toggleNotifications}
       onReset={() => push({ name: 'interests' })}
       onBackToKey={goHome}
       onOpenLibrary={() => push({ name: 'library' })}
@@ -338,6 +364,7 @@ function AppContent() {
           setSuggestions(books);
           void saveSuggestions(books);
           void clearLastBook();
+          void syncDailyRecommendation(true);
         }
 
         push({ name: 'suggestions' });
