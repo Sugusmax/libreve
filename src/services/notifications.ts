@@ -23,6 +23,7 @@ type Settings = {
   minute?: number;
   lastBookKey?: string;
   lastScheduledAt?: number;
+  turn?: number;
 };
 
 type NativeNotifications = {
@@ -82,6 +83,7 @@ async function loadSettings(): Promise<Settings> {
       ...(typeof value.lastScheduledAt === 'number'
         ? { lastScheduledAt: value.lastScheduledAt }
         : {}),
+      ...(typeof value.turn === 'number' ? { turn: value.turn } : {}),
     };
   } catch {
     return { enabled: true };
@@ -286,6 +288,7 @@ async function onAppBackground(): Promise<void> {
     minute,
     lastBookKey: getBookKey(book),
     lastScheduledAt: Date.now(),
+    turn: 0,
   });
 }
 
@@ -347,19 +350,15 @@ export async function syncDailyRecommendation(force = false): Promise<void> {
 
   const book = pickBook(candidates, settings.lastBookKey);
   const coverUri = await downloadCover(book);
+  const turn = (settings.turn ?? 0) + 1;
 
   await cancelNative();
-  await schedule(
-    book,
-    coverUri,
-    settings.lastScheduledAt ? 1 : 0,
-    settings.hour,
-    settings.minute,
-  );
+  await schedule(book, coverUri, turn, settings.hour, settings.minute);
   await saveSettings({
     ...settings,
     lastBookKey: getBookKey(book),
     lastScheduledAt: Date.now(),
+    turn,
   });
 }
 
