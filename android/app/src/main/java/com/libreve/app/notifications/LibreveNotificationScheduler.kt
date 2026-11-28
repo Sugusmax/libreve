@@ -50,7 +50,7 @@ object LibreveNotificationScheduler {
       "Recomendaciones de lectura",
       NotificationManager.IMPORTANCE_HIGH,
     ).apply {
-      description = "Una sugerencia de libro por día, basada en tus intereses."
+      description = "Una recomendación o recordatorio de lectura por día."
       setSound(null, null)
       enableVibration(false)
     }

@@ -1,7 +1,7 @@
 import { AppState, NativeModules, Platform, type AppStateStatus } from 'react-native';
 import * as FileSystem from 'expo-file-system';
 import * as Notifications from 'expo-notifications';
-import type { BookSuggestion } from './ai';
+import type { BookChapter, BookSuggestion } from './ai';
 import { upgradeCoverUrl } from './covers';
 import {
   getBookKey,
@@ -35,6 +35,18 @@ type NativeNotifications = {
     minute: number,
   ) => Promise<boolean>;
   cancel: () => Promise<boolean>;
+};
+
+type ReadingCandidate = {
+  book: BookSuggestion;
+  chapter: BookChapter;
+};
+
+type NotificationContent = {
+  title: string;
+  body: string;
+  book: BookSuggestion;
+  coverUri: string | null;
 };
 
 const native = NativeModules.LibreveNotifications as
@@ -102,7 +114,7 @@ async function hasPermission(request: boolean): Promise<boolean> {
   if (Platform.OS === 'android') {
     await Notifications.setNotificationChannelAsync(CHANNEL_ID, {
       name: 'Recomendaciones de lectura',
-      description: 'Una sugerencia de libro por día, basada en tus intereses.',
+      description: 'Una recomendación o recordatorio de lectura por día.',
       importance: Notifications.AndroidImportance.HIGH,
     });
   }
@@ -152,6 +164,23 @@ async function loadCandidates(): Promise<BookSuggestion[]> {
   return (unread.length > 0 ? unread : all).slice(0, 12);
 }
 
+/** Libros con resumen guardado cuyo último capítulo no marca el final. */
+async function loadReadingCandidates(): Promise<ReadingCandidate[]> {
+  const library = await loadLibrary();
+
+  return library
+    .filter(
+      (entry) =>
+        entry.chapters.length > 0 &&
+        !entry.chapters.some((chapter) => chapter.isLast),
+    )
+    .map((entry) => ({
+      book: entry.book,
+      chapter: entry.chapters[entry.chapters.length - 1],
+    }))
+    .slice(0, 8);
+}
+
 function pickBook(books: BookSuggestion[], lastKey?: string): BookSuggestion {
   if (books.length === 1) {
     return books[0];
@@ -160,6 +189,23 @@ function pickBook(books: BookSuggestion[], lastKey?: string): BookSuggestion {
   let index = Math.floor(Math.random() * books.length);
 
   if (getBookKey(books[index]) === lastKey) {
+    index = (index + 1) % books.length;
+  }
+
+  return books[index];
+}
+
+function pickReading(
+  books: ReadingCandidate[],
+  lastKey?: string,
+): ReadingCandidate {
+  if (books.length === 1) {
+    return books[0];
+  }
+
+  let index = Math.floor(Math.random() * books.length);
+
+  if (getBookKey(books[index].book) === lastKey) {
     index = (index + 1) % books.length;
   }
 
@@ -193,13 +239,48 @@ async function downloadCover(book: BookSuggestion): Promise<string | null> {
   }
 }
 
-function buildMessage(book: BookSuggestion, turn: number) {
+/**
+ * Alterna entre sugerencias y lecturas pendientes. Siempre devuelve un solo
+ * contenido: la app solo programa una notificación por día.
+ */
+async function prepareContent(
+  turn: number,
+  lastBookKey?: string,
+): Promise<NotificationContent | null> {
+  const [suggestions, pending] = await Promise.all([
+    loadCandidates(),
+    loadReadingCandidates(),
+  ]);
+  const continueReading =
+    pending.length > 0 && (suggestions.length === 0 || turn % 2 === 1);
+
+  if (continueReading) {
+    const item = pickReading(pending, lastBookKey);
+    const detail = [item.book.title, `Capítulo ${item.chapter.number}`]
+      .filter(Boolean)
+      .join(' · ');
+
+    return {
+      title: 'Seguí donde lo dejaste',
+      body: `${detail}: ${item.chapter.title}. Retomá tu resumen cuando quieras.`,
+      book: item.book,
+      coverUri: await downloadCover(item.book),
+    };
+  }
+
+  if (suggestions.length === 0) {
+    return null;
+  }
+
+  const book = pickBook(suggestions, lastBookKey);
   const detail = [book.title, book.author].filter(Boolean).join(' · ');
   const reason = book.reason ? ` ${book.reason}` : '';
 
   return {
     title: MESSAGES[turn % MESSAGES.length],
     body: `${detail}.${reason}`,
+    book,
+    coverUri: await downloadCover(book),
   };
 }
 
@@ -211,13 +292,11 @@ async function cancelNative(): Promise<void> {
 }
 
 async function schedule(
-  book: BookSuggestion,
-  coverUri: string | null,
-  turn: number,
+  content: NotificationContent,
   hour: number,
   minute: number,
-) {
-  const { title, body } = buildMessage(book, turn);
+): Promise<void> {
+  const { title, body, coverUri } = content;
 
   if (Platform.OS === 'android' && native) {
     await native.scheduleDaily(title, body, coverUri ?? '', hour, minute);
@@ -268,25 +347,23 @@ async function onAppBackground(): Promise<void> {
     return;
   }
 
-  const candidates = await loadCandidates();
+  const content = await prepareContent(0, settings.lastBookKey);
 
-  if (candidates.length === 0) {
+  if (!content) {
     return;
   }
 
-  const book = pickBook(candidates, settings.lastBookKey);
-  const coverUri = await downloadCover(book);
   const when = new Date(Date.now() + FIRST_DELAY_MS);
   const hour = when.getHours();
   const minute = when.getMinutes();
 
   await cancelNative();
-  await schedule(book, coverUri, 0, hour, minute);
+  await schedule(content, hour, minute);
   await saveSettings({
     enabled: true,
     hour,
     minute,
-    lastBookKey: getBookKey(book),
+    lastBookKey: getBookKey(content.book),
     lastScheduledAt: Date.now(),
     turn: 0,
   });
@@ -341,22 +418,19 @@ export async function syncDailyRecommendation(force = false): Promise<void> {
     return;
   }
 
-  const candidates = await loadCandidates();
+  const turn = (settings.turn ?? 0) + 1;
+  const content = await prepareContent(turn, settings.lastBookKey);
 
-  if (candidates.length === 0) {
+  if (!content) {
     await cancelNative();
     return;
   }
 
-  const book = pickBook(candidates, settings.lastBookKey);
-  const coverUri = await downloadCover(book);
-  const turn = (settings.turn ?? 0) + 1;
-
   await cancelNative();
-  await schedule(book, coverUri, turn, settings.hour, settings.minute);
+  await schedule(content, settings.hour, settings.minute);
   await saveSettings({
     ...settings,
-    lastBookKey: getBookKey(book),
+    lastBookKey: getBookKey(content.book),
     lastScheduledAt: Date.now(),
     turn,
   });

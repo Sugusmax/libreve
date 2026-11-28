@@ -96,9 +96,7 @@ export default function RecommendationsScreen({
             <View style={styles.notificationCopy}>
               <Text style={styles.notificationTitle}>Recomendaciones diarias</Text>
               <Text style={styles.notificationStatus}>
-                {notificationsEnabled
-                  ? 'Activadas · 10 h tras cerrar, luego 1 por día'
-                  : 'Desactivadas'}
+                {notificationsEnabled ? 'Activadas' : 'Desactivadas'}
               </Text>
             </View>
             <View

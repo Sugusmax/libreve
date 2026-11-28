@@ -54,6 +54,7 @@ import {
   saveChapters,
   saveSimilarBooks,
 } from '../services/library';
+import { syncDailyRecommendation } from '../services/notifications';
 import {
   DEFAULT_SUMMARY_STYLE,
   SUMMARY_FONT_IDS,
@@ -473,6 +474,7 @@ export default function BookSummaryScreen({
 
     try {
       await saveChapters(book, updated);
+      void syncDailyRecommendation(true);
     } catch {
       // El cambio sigue activo en esta sesión.
     }
@@ -515,6 +517,7 @@ export default function BookSummaryScreen({
 
       try {
         await saveChapters(book, updated);
+        void syncDailyRecommendation(true);
       } catch {
         // Si no se puede guardar, el resumen sigue disponible en esta sesión.
       }
@@ -570,6 +573,7 @@ export default function BookSummaryScreen({
 
       try {
         await saveChapters(book, updated);
+        void syncDailyRecommendation(true);
       } catch {
         // El resumen sigue disponible en esta sesión.
       }
